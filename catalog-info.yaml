@@ -1,0 +1,13 @@
+# nonk8s
+apiVersion: "backstage.io/v1alpha1"
+kind: "Component"
+metadata:
+  name: "actions"
+  tags:
+  - "public"
+  - "internal"
+spec:
+  type: "library"
+  lifecycle: "production"
+  owner: "skip"
+  system: "skip"
