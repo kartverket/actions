@@ -1,0 +1,195 @@
+name: Terraform plan
+description: Generate terraform plan, and optionally comment on PR
+
+inputs:
+  comment_on_pr:
+    description: "Should a comment be generated for the PR? [true/false] Requires 'pull-requests: write'"
+    required: false
+    default: "true"
+
+  path:
+    description: "Path to Terraform root directory"
+    required: false
+    default: .
+
+  plan_file:
+    description: "Path to plan file. Will be relative to path if an absolute path is not specified"
+    required: false
+    default: "plan.out"
+
+  environment:
+    description: GitHub environment
+    required: true
+
+  init_outcome:
+    description: "Outcome of the initialization step, defaults to SKIP_TF_INIT_OUTCOME"
+    required: false
+    default: ""
+
+  format_outcome: 
+    description: "Outcome of the formatting step, defaults to SKIP_TF_FORMAT_OUTCOME"
+    required: false
+    default: ""
+
+  validate_outcome: 
+    description: "Outcome of the validation step, defaults to SKIP_TF_VALIDATE_OUTCOME"
+    required: false
+    default: ""
+
+  validate_output: 
+    description: "Standard output of the validation step, defaults to SKIP_TF_VALIDATE_OUTPUT"
+    required: false
+    default: ""
+
+
+runs:
+  using: composite
+  
+  steps:
+    - name: Terraform plan
+      id: plan
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        PLAN_FILE: ${{ inputs.plan_file }}
+      run: terraform plan -detailed-exitcode -out="$PLAN_FILE"
+
+    - name: Format Terraform plan
+      if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        PLAN_FILE: ${{ inputs.plan_file }}
+      run: terraform show -no-color "$PLAN_FILE" > ${{ github.workspace }}/plan.tfplan
+
+    - name: Format inputs
+      if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
+      id: format-inputs
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        INPUT_INIT_OUTCOME: ${{ inputs.init_outcome }}
+        INPUT_FORMAT_OUTCOME: ${{ inputs.format_outcome }}
+        INPUT_VALIDATE_OUTCOME: ${{ inputs.validate_outcome }}
+        INPUT_VALIDATE_OUTPUT: ${{ inputs.validate_output }}
+      run: |
+        echo "INIT_OUTCOME=${INPUT_INIT_OUTCOME:-$SKIP_TF_INIT_OUTCOME}" >> "$GITHUB_OUTPUT"
+        echo "FORMAT_OUTCOME=${INPUT_FORMAT_OUTCOME:-$SKIP_TF_FORMAT_OUTCOME}" >> "$GITHUB_OUTPUT"
+        echo "VALIDATE_OUTCOME=${INPUT_VALIDATE_OUTCOME:-$SKIP_TF_VALIDATE_OUTCOME}" >> "$GITHUB_OUTPUT"
+        echo "VALIDATE_OUTPUT=${INPUT_VALIDATE_OUTPUT:-$SKIP_TF_VALIDATE_OUTPUT}" >> "$GITHUB_OUTPUT"
+
+
+    - uses: actions/github-script@v7
+      name: Add PR comment
+      if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        INIT_OUTCOME: ${{ steps.format-inputs.outputs.INIT_OUTCOME }}
+        FORMAT_OUTCOME: ${{ steps.format-inputs.outputs.FORMAT_OUTCOME }}
+        VALIDATE_OUTCOME: ${{ steps.format-inputs.outputs.VALIDATE_OUTCOME }}
+        VALIDATE_OUTPUT: ${{ steps.format-inputs.outputs.VALIDATE_OUTPUT }}
+        PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
+        PLAN_OUTCOME: ${{ steps.plan.outcome }}
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const run_url = process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + process.env.GITHUB_RUN_ID
+          const run_link = '<a href="' + run_url + '">Actions</a>.'
+          const fs = require('fs')
+          const plan_file = fs.readFileSync('${{ github.workspace }}/plan.tfplan', 'utf8')
+          const plan = plan_file.length > 65000 ? plan_file.toString().substring(0, 65000) + '...' : plan_file
+          const truncated_message = plan_file.length > 65000 ? "Output is too long and was truncated. You can read full Plan in " + run_link + "<br /><br />" : ""
+          const { data: comments } = await github.rest.issues.listComments({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo
+          });
+
+          const {
+            ENVIRONMENT,
+            PLAN_EXITCODE,
+            VALIDATE_OUTPUT,
+            PLAN_OUTPUT,
+            FORMAT_OUTCOME,
+            INIT_OUTCOME,
+            VALIDATE_OUTCOME,
+            PLAN_OUTCOME,
+          } = process.env;
+
+          /* Body is in the format of
+          * <!-- @run-terraform -->
+          * <!-- @run-terraform:start:jobid -->
+          * Output of job with id jobid
+          * <!-- @run-terraform:end:jobid -->
+          */
+          const bodyStartMarker = '<!-- @run-terraform -->';
+          const comment = comments.find(({ body }) => body.startsWith(bodyStartMarker));
+          const id = comment?.id;
+          let commentBody = comment?.body ?? bodyStartMarker;
+          const bodyHasJobInfo = commentBody.includes(`<!-- @run-terraform:start:${ENVIRONMENT} -->`);
+
+          const exitcode = PLAN_EXITCODE;
+          const action = {
+            0: 'No changes detected. Will not run Terraform apply job',
+            1: 'An error occured! Will not run Terraform apply job',
+            2: `Changes detected. Will run Terraform apply job on merge`
+          }[exitcode] ?? 'Terraform gave an unknown exit code, I don\'t know what happens next!';
+
+          const jobBody = `<!-- @run-terraform:start:${ENVIRONMENT} -->
+          ## Results for ${ENVIRONMENT} ${exitcode === '2' ? '– ❗ `CHANGED` ❗' : ''}
+          #### Terraform Format and Style 🖌 \`${FORMAT_OUTCOME}\`
+          #### Terraform Initialization ⚙️ \`${INIT_OUTCOME}\`
+          #### Terraform Validation 🤖 \`${VALIDATE_OUTCOME}\`
+          <details><summary>Validation Output</summary>
+
+          \`\`\`\n
+          ${VALIDATE_OUTPUT}
+          \`\`\`
+
+          </details>
+
+          #### Terraform Plan 📖 \`${PLAN_OUTCOME}\`
+
+          <details><summary>Show Plan</summary>
+
+          \`\`\`\n
+          ${plan}
+          \`\`\`
+
+          </details>
+          ${truncated_message}
+
+          #### Next action 🚀
+          ${action}
+
+          *Pusher: @${{ github.actor }}, Working Directory: \`${{ env.tf_actions_working_dir }}\`, Commit: ${{ github.sha }}, Generated at: \`${new Date().toLocaleString('nb')}\`*
+          <!-- @run-terraform:end:${ENVIRONMENT} -->`;
+
+          if (bodyHasJobInfo) {
+            commentBody = commentBody.replace(
+              new RegExp(`<!-- @run-terraform:start:${ENVIRONMENT} -->.*<!-- @run-terraform:end:${ENVIRONMENT} -->`, 's'),
+              jobBody,
+            );
+          } else {
+            commentBody += '\n' + jobBody;
+          }
+
+          commentBody = commentBody
+            .replaceAll("%0A", "\n")
+            .replaceAll("%0D", "\n");
+
+          if (id) {
+            github.rest.issues.updateComment({
+              comment_id: id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            })
+          } else {
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            })
+          }

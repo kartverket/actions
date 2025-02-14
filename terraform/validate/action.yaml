@@ -1,0 +1,47 @@
+name: Validate terraform
+description: Validate formatting and terraform code
+
+inputs:
+  path:
+    description: "Path to Terraform root directory"
+    required: false
+    default: .
+
+outputs:
+  format_outcome:
+    description: The outcome of the formatting step
+    value: ${{ steps.fmt.outcome }}
+  validate_outcome:
+    description: The outcome of the validation step
+    value: ${{ steps.validate.outcome }}
+  validate_output:
+    description: The outcome of the validation step
+    value: ${{ steps.validate.outputs.stdout }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Terraform format
+      id: fmt
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      run: terraform fmt --recursive -check
+
+    - name: Terraform validate
+      id: validate
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      run: terraform validate -no-color
+
+    - name: Set environment variables
+      shell: bash
+      run: |
+        echo "SKIP_TF_FORMAT_OUTCOME=${{ steps.fmt.outcome }}" >> "$GITHUB_ENV"
+        echo "SKIP_TF_VALIDATE_OUTCOME=${{ steps.validate.outcome }}" >> "$GITHUB_ENV"
+        {
+          echo 'SKIP_TF_VALIDATE_OUTPUT<<EOF'
+          echo '${{ steps.validate.outputs.stdout }}'
+          echo 'EOF'
+        } >> "$GITHUB_ENV"
+

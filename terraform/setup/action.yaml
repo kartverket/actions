@@ -1,0 +1,34 @@
+name: Setup terraform
+description: Setup and initialize terraform
+
+inputs:
+  path:
+    description: "Path to Terraform root directory"
+    required: false
+    default: .
+
+outputs:
+  init_outcome:
+    description: The outcome of the initialization step
+    value: ${{ steps.init.outcome }}
+
+
+runs:
+  using: composite
+
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+    # TODO: Future: Terraform modules and version override
+
+    - name: Initilize Terraform
+      id: init
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      run: terraform init
+
+    - name: Set environment variables
+      shell: bash
+      run: |
+        echo "SKIP_TF_INIT_OUTCOME=${{ steps.init.outcome }}" >> "$GITHUB_ENV"
+

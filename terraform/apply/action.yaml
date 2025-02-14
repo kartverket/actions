@@ -1,0 +1,26 @@
+name: Apply terraform
+description: Apply terraform
+
+inputs:
+  path:
+    description: "Path to Terraform root directory"
+    required: false
+    default: .
+
+  plan_file:
+    description: "Path to plan file. Will be relative to path if an absolute path is not specified"
+    required: false
+    default: "plan.out"
+
+
+runs:
+  using: composite
+
+  steps:
+    - name: Terraform apply
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        PLAN_FILE: ${{ inputs.plan_file }}
+      run: terraform apply -auto-approve -input=false "$PLAN_FILE"
+
