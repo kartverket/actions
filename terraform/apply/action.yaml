@@ -12,12 +12,24 @@ inputs:
     required: false
     default: "plan.out"
 
+outputs:
+  # Propagate outputs automatically set by the setup-terraform wrapper
+  stdout:
+    description: "Standard out from the apply step"
+    value: ${{ steps.apply.outputs.stdout }}
+  stderr:
+    description: "Standard error from the apply step"
+    value: ${{ steps.apply.outputs.stderr }}
+  exitcode:
+    description: "Exitcode from the apply step"
+    value: ${{ steps.apply.outputs.exitcode }}
 
 runs:
   using: composite
 
   steps:
     - name: Terraform apply
+      id: apply
       shell: bash
       working-directory: ${{ inputs.path }}
       env:

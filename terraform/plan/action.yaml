@@ -46,6 +46,17 @@ inputs:
     required: false
     default: ""
 
+outputs:
+  # Propagate outputs automatically set by the setup-terraform wrapper
+  stdout:
+    description: "Standard out from the plan step"
+    value: ${{ steps.plan.outputs.stdout }}
+  stderr:
+    description: "Standard error from the plan step"
+    value: ${{ steps.plan.outputs.stderr }}
+  exitcode:
+    description: "Exitcode from the plan step"
+    value: ${{ steps.plan.outputs.exitcode }}
 
 runs:
   using: composite
