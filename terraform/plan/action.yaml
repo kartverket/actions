@@ -21,22 +21,27 @@ inputs:
     description: GitHub environment
     required: true
 
+  destroy:
+    description: "Create plan for destroying all resources if set to 'true'."
+    required: false
+    default: "false"
+
   init_outcome:
     description: "Outcome of the initialization step, defaults to SKIP_TF_INIT_OUTCOME"
     required: false
     default: ""
 
-  format_outcome: 
+  format_outcome:
     description: "Outcome of the formatting step, defaults to SKIP_TF_FORMAT_OUTCOME"
     required: false
     default: ""
 
-  validate_outcome: 
+  validate_outcome:
     description: "Outcome of the validation step, defaults to SKIP_TF_VALIDATE_OUTCOME"
     required: false
     default: ""
 
-  validate_output: 
+  validate_output:
     description: "Standard output of the validation step, defaults to SKIP_TF_VALIDATE_OUTPUT"
     required: false
     default: ""
@@ -44,7 +49,7 @@ inputs:
 
 runs:
   using: composite
-  
+
   steps:
     - name: Terraform plan
       id: plan
@@ -52,7 +57,33 @@ runs:
       working-directory: ${{ inputs.path }}
       env:
         PLAN_FILE: ${{ inputs.plan_file }}
-      run: terraform plan -detailed-exitcode -out="$PLAN_FILE"
+        DESTROY_FLAG: ${{ inputs.destroy == 'true' && '-destroy' || '' }}
+      run: |
+        # 1. Run and send stdout to build log as usual
+        terraform plan $DESTROY_FLAG -detailed-exitcode -input=false -no-color -out="$PLAN_FILE" \
+          | tee output.txt
+
+        # 2. Remove some github commands and fluff
+        # This removes any line containing "Reading...", "Read complete after", and "Refreshing state...", which are terraform lines spewed out during state reading
+        STDOUT="$(grep -v -E '(.*Reading\.\.\..*)|(.*Read complete after.*)|(.*Refreshing state\.\.\..*)' output.txt)"
+
+        # Insert cleaned output back into output.txt
+        echo "$STDOUT" > output.txt
+
+        # 3. Write to step summary
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        \`\`\`
+        $STDOUT
+        \`\`\`
+        EOF
+
+        # 4. Write output
+        {
+          echo 'stdout<<EOF'
+          echo "$STDOUT"
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
+
 
     - name: Format Terraform plan
       if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
@@ -63,7 +94,7 @@ runs:
       run: terraform show -no-color "$PLAN_FILE" > ${{ github.workspace }}/plan.tfplan
 
     - name: Format inputs
-      if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
+      if: always() && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
       id: format-inputs
       shell: bash
       working-directory: ${{ inputs.path }}
@@ -81,7 +112,7 @@ runs:
 
     - uses: actions/github-script@v7
       name: Add PR comment
-      if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
+      if: always() && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
       env:
         ENVIRONMENT: ${{ inputs.environment }}
         INIT_OUTCOME: ${{ steps.format-inputs.outputs.INIT_OUTCOME }}
