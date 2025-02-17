@@ -22,5 +22,29 @@ runs:
       working-directory: ${{ inputs.path }}
       env:
         PLAN_FILE: ${{ inputs.plan_file }}
-      run: terraform apply -auto-approve -input=false "$PLAN_FILE"
+      run: |
+        # 1. Run and send stdout to build log as usual
+        terraform apply -auto-approve -input=false -no-color "$PLAN_FILE" \
+          | tee output.txt
+
+        # 2. Remove some github commands and fluff
+        # This removes any line containing status updates on destruction or creation commands
+        STDOUT="$(grep -v -E '(.*(Destroying|Creating|Modifying)\.\.\..*)|(.*(Destruction|Creation|Modifications) complete.*)' output.txt)"
+
+        # Insert cleaned output back into output.txt
+        echo "$STDOUT" > output.txt
+
+        # 3. Write to step summary
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        \`\`\`
+        $STDOUT
+        \`\`\`
+        EOF
+
+        # 4. Write output
+        {
+          echo 'stdout<<EOF'
+          echo "$STDOUT"
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
 
