@@ -97,7 +97,7 @@ runs:
 
 
     - name: Format Terraform plan
-      if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
+      if: always() && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
       shell: bash
       working-directory: ${{ inputs.path }}
       env:
@@ -132,6 +132,7 @@ runs:
         VALIDATE_OUTPUT: ${{ steps.format-inputs.outputs.VALIDATE_OUTPUT }}
         PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
         PLAN_OUTCOME: ${{ steps.plan.outcome }}
+        PLAN_ERROR: ${{ steps.plan.outputs.stderr }}
       with:
         github-token: ${{ github.token }}
         script: |
@@ -156,6 +157,7 @@ runs:
             INIT_OUTCOME,
             VALIDATE_OUTCOME,
             PLAN_OUTCOME,
+            PLAN_ERROR,
           } = process.env;
 
           /* Body is in the format of
@@ -176,6 +178,16 @@ runs:
             1: 'An error occured! Will not run Terraform apply job',
             2: `Changes detected. Will run Terraform apply job on merge`
           }[exitcode] ?? 'Terraform gave an unknown exit code, I don\'t know what happens next!';
+
+          const plan_error_message = exitcode == 1 ?
+          `<details><summary>❗❗❗ Plan Errors ❗❗❗</summary>
+
+          \`\`\`\n
+          ${PLAN_ERROR}
+          \`\`\`
+
+          </details>
+          ` : '';
 
           const jobBody = `<!-- @run-terraform:start:${ENVIRONMENT} -->
           ## Results for ${ENVIRONMENT} ${exitcode === '2' ? '– ❗ `CHANGED` ❗' : ''}
@@ -200,6 +212,8 @@ runs:
 
           </details>
           ${truncated_message}
+
+          ${plan_error_message}
 
           #### Next action 🚀
           ${action}
