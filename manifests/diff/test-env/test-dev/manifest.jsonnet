@@ -6,6 +6,6 @@
   },
   spec: {
     image: 'test',
-    port: 50002,
+    port: 3000,
   },
 }
