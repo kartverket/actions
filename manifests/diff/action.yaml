@@ -1,43 +1,39 @@
-name: Manifest Diff
-description: Generate Kubernetes manifest diffs using skipctl
 author: Kartverket
-
+description: Generate Kubernetes manifest diffs using skipctl
 inputs:
-  path:
-    description: "Path to file or directory in which to look for manifests to diff"
-    required: false
-    default: env
-  ref:
-    description: "Which git ref to compare against"
-    required: false
-    default: origin/main
-  skipctl-version:
-    description: "Which version of skipctl to use"
-    required: false
-    default: latest
-
+    path:
+        default: env
+        description: Path to file or directory in which to look for manifests to diff
+        required: false
+    ref:
+        default: origin/main
+        description: Which git ref to compare against
+        required: false
+    skipctl-version:
+        default: latest
+        description: Which version of skipctl to use
+        required: false
+name: Manifest Diff
 outputs:
-  prod:
-    description: "Production environment diff output (HTML formatted)"
-    value: ${{ steps.diff.outputs.prod }}
-  dev:
-    description: "Dev environment diff output (HTML formatted)"
-    value: ${{ steps.diff.outputs.dev }}
-
+    dev:
+        description: Dev environment diff output (HTML formatted)
+        value: ${{ steps.diff.outputs.dev }}
+    prod:
+        description: Production environment diff output (HTML formatted)
+        value: ${{ steps.diff.outputs.prod }}
 runs:
-  using: composite
-  steps:
-    - name: Install skipctl @ ${{ inputs.skipctl-version }}
-      uses: jaxxstorm/action-install-gh-release@6096f2a2bbfee498ced520b6922ac2c06e990ed2 # v2.1.0
-      with:
-        repo: kartverket/skipctl
-        tag: ${{ inputs.skipctl-version }}
-        cache: enable
-
-    - name: Generate manifest diffs
-      id: diff
-      shell: bash
-      run: ${{ github.action_path }}/diff.sh
-      env:
-        INPUTS_PATH: ${{ inputs.path }}
-        INPUTS_REF: ${{ inputs.ref }}
+    steps:
+        - name: Install skipctl @ ${{ inputs.skipctl-version }}
+          uses: jaxxstorm/action-install-gh-release@6096f2a2bbfee498ced520b6922ac2c06e990ed2
+          with:
+            cache: enable
+            repo: kartverket/skipctl
+            tag: ${{ inputs.skipctl-version }}
+        - env:
+            INPUTS_PATH: ${{ inputs.path }}
+            INPUTS_REF: ${{ inputs.ref }}
+          id: diff
+          name: Generate manifest diffs
+          run: ${{ github.action_path }}/diff.sh
+          shell: bash
+    using: composite
