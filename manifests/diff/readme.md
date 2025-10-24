@@ -12,8 +12,7 @@ Defines the manifest diff action.
 Contains the script logic.
 
 **What it does?**
-- Finds all manifest files inside subdirectories of `INPUTS_PATH` and groups them by
-if they are inside a dir with suffix `-dev` og `-prod`.
+- Finds all manifest files inside subdirectories of `INPUTS_PATH` and groups them based on directory suffix (`-dev` or `-prod`).
 - Runs `skipctl manifests diff` on these files
 - Formats the output with a HTML `<details>` tag
 - Outputs the results to `GITHUB_OUTPUT`
