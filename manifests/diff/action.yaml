@@ -1,0 +1,39 @@
+author: Kartverket
+description: Generate Kubernetes manifest diffs using skipctl
+inputs:
+    path:
+        default: env
+        description: Path to file or directory in which to look for manifests to diff
+        required: false
+    ref:
+        default: origin/main
+        description: Which git ref to compare against
+        required: false
+    skipctl-version:
+        default: latest
+        description: Which version of skipctl to use
+        required: false
+name: Manifest Diff
+outputs:
+    dev:
+        description: Dev environment diff output (HTML formatted)
+        value: ${{ steps.diff.outputs.dev }}
+    prod:
+        description: Production environment diff output (HTML formatted)
+        value: ${{ steps.diff.outputs.prod }}
+runs:
+    steps:
+        - name: Install skipctl @ ${{ inputs.skipctl-version }}
+          uses: jaxxstorm/action-install-gh-release@6096f2a2bbfee498ced520b6922ac2c06e990ed2
+          with:
+            cache: enable
+            repo: kartverket/skipctl
+            tag: ${{ inputs.skipctl-version }}
+        - env:
+            INPUTS_PATH: ${{ inputs.path }}
+            INPUTS_REF: ${{ inputs.ref }}
+          id: diff
+          name: Generate manifest diffs
+          run: ${{ github.action_path }}/diff.sh
+          shell: bash
+    using: composite
