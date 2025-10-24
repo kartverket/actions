@@ -15,7 +15,7 @@ Contains the script logic.
 - Finds all manifest files inside subdirectories of `INPUTS_PATH` and groups them by
 if they are inside a dir with suffix `-dev` og `-prod`.
 - Runs `skipctl manifests diff` on these files
-- Formats the output with a html <details> tag
+- Formats the output with a HTML `<details>` tag
 - Outputs the results to `GITHUB_OUTPUT`
 
 ## How to test the script
