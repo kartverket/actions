@@ -1,0 +1,6 @@
+{
+  apiVersion: "skiperator.kartverket.no/v1alpha1",
+  kind: "Application",
+  metadata: { name: name },
+  spec: { image: "test", port: 3333 },
+}
