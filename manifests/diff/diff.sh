@@ -32,7 +32,7 @@ generate_diff_output() {
                 output+=$'\n'
             fi
         done < <(find "$dir" -type f -print0 | sort -z)
-    done < <(find "${INPUTS_PATH}" -type d -name "$pattern" -print0 | sort -z)
+    done < <(find "${INPUTS_PATH}" -maxdepth 1 -type d -name "$pattern" -print0 | sort -z)
 
     echo "$output"
 }
