@@ -87,7 +87,7 @@ for suffix in "${suffixes[@]}"; do
         if [ -n "$diff_content" ]; then
             # Add environment header for non-prod
             other_output+=$'\n'
-            other_output+="### ${suffix}"
+            other_output+="## ${suffix}"
             other_output+=$'\n'
             other_output+="$diff_content"
             other_output+=$'\n'
