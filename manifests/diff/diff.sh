@@ -37,15 +37,44 @@ generate_diff_output() {
     echo "$output"
 }
 
-DIFF_OUTPUT_PROD="$(generate_diff_output '*-prod')"
-DIFF_OUTPUT_DEV="$(generate_diff_output '*-dev')"
+# Discover all unique suffixes from directory names
+suffixes=()
+while IFS= read -r dir; do
+    basename=$(basename "$dir")
+    # Extract suffix after last hyphen
+    if [[ "$basename" =~ -([^-]+)$ ]]; then
+        suffix="${BASH_REMATCH[1]}"
+        # Add to array if not already present
+        if [[ ${#suffixes[@]} -eq 0 ]] || [[ ! " ${suffixes[@]} " =~ " ${suffix} " ]]; then
+            suffixes+=("$suffix")
+        fi
+    fi
+done < <(find "${INPUTS_PATH}" -maxdepth 1 -mindepth 1 -type d -name '*-*')
 
-# Set outputs using GitHub Actions output syntax
-{
-    echo 'prod<<EOF'
-    printf '%s\n' "$DIFF_OUTPUT_PROD"
-    echo 'EOF'
-    echo 'dev<<EOF'
-    printf '%s\n' "$DIFF_OUTPUT_DEV"
-    echo 'EOF'
-} >> "$GITHUB_OUTPUT"
+for suffix in "${suffixes[@]}"; do
+    echo "found: ${suffix}"
+done
+
+# Generate diff output for each suffix in parallel
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+for suffix in "${suffixes[@]}"; do
+    (
+        diff_output="$(generate_diff_output "*-${suffix}")"
+        {
+            echo "${suffix}<<EOF"
+            printf '%s\n' "$diff_output"
+            echo 'EOF'
+        } > "$tmpdir/${suffix}.out"
+    ) &
+done
+
+wait
+
+# Write outputs to GITHUB_OUTPUT in consistent order
+for suffix in "${suffixes[@]}"; do
+    cat "$tmpdir/${suffix}.out"
+done >> "$GITHUB_OUTPUT"
+
+rm -rf "$tmpdir"

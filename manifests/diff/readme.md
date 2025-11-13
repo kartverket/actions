@@ -12,18 +12,21 @@ Defines the manifest diff action.
 Contains the script logic.
 
 **What it does?**
-- Finds all manifest files inside subdirectories of `INPUTS_PATH` and groups them based on directory suffix (`-dev` or `-prod`).
+- Finds all manifest files inside subdirectories of `INPUTS_PATH` and groups them based on directory suffix e.g. `-dev`, `-prod`, `-sandbox`).
 - Runs `skipctl manifests diff` on these files
 - Formats the output with a HTML `<details>` tag
 - Outputs the results to `GITHUB_OUTPUT`
 
 ## How to test the script
 
-1. Update files in `test-env/test-dev` and/or `test-env/test-prod`
+1. Update files in any of `test-env/test-dev`, `test-env/test-prod`, `test-env/test-sandbox`
 2. Run the test script `./test.sh`
 3. The output should look something like this
 
 ````shell
+=== DISCOVERED SUFFIXES ===
+dev sandbox prod
+
 === PROD DIFF ===
 <details>
   <summary><b>test-env/test-prod/manifest.jsonnet DIFF</b></summary>
@@ -42,6 +45,8 @@ Contains the script logic.
 
 ```
 </details>
+
+=== SANDBOX DIFF ===
 
 === DEV DIFF ===
 <details>
