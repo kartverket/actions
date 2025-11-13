@@ -17,7 +17,7 @@ name: Manifest Diff
 outputs:
     other:
         description: Other environments diff output (HTML formatted)
-        value: ${{ steps.diff.outputs.dev }}
+        value: ${{ steps.diff.outputs.other }}
     prod:
         description: Production environment diff output (HTML formatted)
         value: ${{ steps.diff.outputs.prod }}
