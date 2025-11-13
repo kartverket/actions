@@ -1,6 +1,6 @@
 {
   apiVersion: 'skiperator.kartverket.no/v1alpha1',
-  kind: 'Application',
+  kind: 'pplication',
   metadata: {
     name: 'prod-test',
   },

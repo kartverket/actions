@@ -72,9 +72,37 @@ done
 
 wait
 
-# Write outputs to GITHUB_OUTPUT in consistent order
+# Combine outputs into prod and other categories
+prod_output=""
+other_output=""
+
 for suffix in "${suffixes[@]}"; do
-    cat "$tmpdir/${suffix}.out"
-done >> "$GITHUB_OUTPUT"
+    content=$(cat "$tmpdir/${suffix}.out")
+    # Extract the actual diff content (everything between first newline and EOF)
+    diff_content=$(echo "$content" | sed '1d;$d')
+    
+    if [ "$suffix" = "prod" ]; then
+        prod_output+="$diff_content"
+    else
+        if [ -n "$diff_content" ]; then
+            # Add environment header for non-prod
+            other_output+=$'\n'
+            other_output+="### ${suffix}"
+            other_output+=$'\n'
+            other_output+="$diff_content"
+            other_output+=$'\n'
+        fi
+    fi
+done
+
+# Write grouped outputs to GITHUB_OUTPUT
+{
+    echo "prod<<EOF"
+    printf '%s\n' "$prod_output"
+    echo 'EOF'
+    echo "other<<EOF"
+    printf '%s\n' "$other_output"
+    echo 'EOF'
+} >> "$GITHUB_OUTPUT"
 
 rm -rf "$tmpdir"

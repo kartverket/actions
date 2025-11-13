@@ -15,8 +15,8 @@ inputs:
         required: false
 name: Manifest Diff
 outputs:
-    dev:
-        description: Dev environment diff output (HTML formatted)
+    other:
+        description: Other environments diff output (HTML formatted)
         value: ${{ steps.diff.outputs.dev }}
     prod:
         description: Production environment diff output (HTML formatted)
