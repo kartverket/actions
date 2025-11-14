@@ -61,15 +61,15 @@ if [[ ${#invalids[@]i} -gt 0 ]];then
     for invalid in "${invalids[@]}"; do
          echo "'${invalid}' is invalid (skipped)"
     done
-        echo
-        echo "-------------------------------------------------------------------"
-        echo "Please note that all cluster names should have the dash suffix (-)."
-        echo "Examples: \"-prod\",\"-dev\" and \"-sandbox\"".
-        echo "-------------------------------------------------------------------"
-        echo
+    echo
+    echo "-------------------------------------------------------------------"
+    echo "Please note that all cluster names should have the dash suffix (-)."
+    echo "Examples: \"-prod\",\"-dev\" and \"-sandbox\"".
+    echo "-------------------------------------------------------------------"
+    echo
 fi
 
-echo diffing clusters with environments:
+echo "diffing clusters with environments:"
 for suffix in "${suffixes[@]}"; do
     echo "${suffix} (${INPUTS_PATH}/*-${suffix})"
 done
