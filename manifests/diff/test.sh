@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Configuration
-INPUTS_PATH=test-env/
+INPUTS_PATH=./test-env
 INPUTS_REF=HEAD
 
 GITHUB_OUTPUT=$(mktemp)
@@ -13,12 +13,17 @@ export INPUTS_REF INPUTS_PATH GITHUB_OUTPUT
 # Execute
 bash "${DIFF_SCRIPT}"
 
-# Output results separately
-echo "=== PROD DIFF ==="
-sed -n '/^prod<<EOF$/,/^EOF$/p' "$GITHUB_OUTPUT" | sed '1d;$d'
-echo ""
-echo "=== DEV DIFF ==="
-sed -n '/^dev<<EOF$/,/^EOF$/p' "$GITHUB_OUTPUT" | sed '1d;$d'
+# Extract all suffixes from output and display them
+echo "=== DISCOVERED SUFFIXES ==="
+grep '<<EOF$' "$GITHUB_OUTPUT" | sed 's/<<EOF$//' | tr '\n' ' '
+echo -e "\n"
+
+# Output results for each suffix
+while IFS= read -r suffix; do
+    echo "=== $(echo "$suffix" | tr '[:lower:]' '[:upper:]') DIFF ==="
+    sed -n "/^${suffix}<<EOF$/,/^EOF$/p" "$GITHUB_OUTPUT" | sed '1d;$d'
+    echo ""
+done < <(grep '<<EOF$' "$GITHUB_OUTPUT" | sed 's/<<EOF$//')
 
 # Cleanup
 rm -f "$GITHUB_OUTPUT"

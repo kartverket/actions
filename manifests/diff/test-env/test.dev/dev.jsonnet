@@ -2,10 +2,10 @@
   apiVersion: 'skiperator.kartverket.no/v1alpha1',
   kind: 'Application',
   metadata: {
-    name: 'test1-dev',
+    name: 'test-dev',
   },
   spec: {
-    image: 'test',
-    port: 3000,
+    image: 'test-duplicate',
+    port: 2002,
   },
 }

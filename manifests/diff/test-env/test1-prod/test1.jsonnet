@@ -1,8 +1,8 @@
 {
   apiVersion: 'skiperator.kartverket.no/v1alpha1',
-  kind: 'Application',
+  kind: 'pplication',
   metadata: {
-    name: 'test1-dev',
+    name: 'prod-test',
   },
   spec: {
     image: 'test',

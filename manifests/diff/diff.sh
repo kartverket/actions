@@ -37,15 +37,94 @@ generate_diff_output() {
     echo "$output"
 }
 
-DIFF_OUTPUT_PROD="$(generate_diff_output '*-prod')"
-DIFF_OUTPUT_DEV="$(generate_diff_output '*-dev')"
+# Discover all unique suffixes from directory names
+suffixes=()
+invalids=()
+while IFS= read -r dir; do
+    basename=$(basename "$dir")
+    # Extract suffix after last hyphen
+    if [[ "$basename" =~ -([^-]+)$ ]]; then
+        suffix="${BASH_REMATCH[1]}"
+        # Add to array if not already present
+        if [[ ${#suffixes[@]} -eq 0 ]] || [[ ! " ${suffixes[@]} " =~ " ${suffix} " ]]; then
+            suffixes+=("$suffix")
+        fi
+    # Add into invalids if wrong suffix is used
+    else
+        invalids+=("$basename")
+    fi
+done < <(find "${INPUTS_PATH}" -maxdepth 1 -mindepth 1 -type d)
 
-# Set outputs using GitHub Actions output syntax
+# Prompt the invalid suffixes so the user can fix them. The correct format is dash suffixes
+if [[ ${#invalids[@]i} -gt 0 ]];then
+    echo "WARNING: Found invalid cluster name(s):"
+    for invalid in "${invalids[@]}"; do
+         echo "'${invalid}' is invalid (skipped)"
+    done
+    echo
+    echo "-------------------------------------------------------------------"
+    echo "Please note that all cluster names should have the dash suffix (-)."
+    echo "Examples: \"-prod\",\"-dev\" and \"-sandbox\"".
+    echo "-------------------------------------------------------------------"
+    echo
+    exit 1
+fi
+
+echo "diffing clusters with environments:"
+for suffix in "${suffixes[@]}"; do
+    echo "${suffix} (${INPUTS_PATH}/*-${suffix})"
+done
+
+# Generate diff output for each suffix in parallel
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+# Process each suffix concurretly for improved performance on large repositories
+# Background execution (&) significantly reduces processing time for extensive configurations
+for suffix in "${suffixes[@]}"; do
+    (
+        diff_output="$(generate_diff_output "*-${suffix}")"
+        {
+            echo "${suffix}<<EOF"
+            printf '%s\n' "$diff_output"
+            echo 'EOF'
+        } > "$tmpdir/${suffix}.out"
+    ) &
+done
+
+wait
+
+# Combine outputs into prod and other categories
+prod_output=""
+other_output=""
+
+for suffix in "${suffixes[@]}"; do
+    content=$(cat "$tmpdir/${suffix}.out")
+    # Extract the actual diff content (everything between first newline and EOF)
+    diff_content=$(echo "$content" | sed '1d;$d')
+
+    if [ "$suffix" = "prod" ]; then
+        prod_output+="$diff_content"
+    else
+        if [ -n "$diff_content" ]; then
+            # Add environment header for non-prod
+            other_output+=$'\n'
+            other_output+="## ${suffix}"
+            other_output+=$'\n'
+            other_output+="$diff_content"
+            other_output+=$'\n'
+        fi
+    fi
+done
+
+# Write grouped outputs to GITHUB_OUTPUT
 {
-    echo 'prod<<EOF'
-    printf '%s\n' "$DIFF_OUTPUT_PROD"
+    echo "prod<<EOF"
+    printf '%s\n' "$prod_output"
     echo 'EOF'
-    echo 'dev<<EOF'
-    printf '%s\n' "$DIFF_OUTPUT_DEV"
+    echo "other<<EOF"
+    printf '%s\n' "$other_output"
     echo 'EOF'
 } >> "$GITHUB_OUTPUT"
+
+rm -rf "$tmpdir"
