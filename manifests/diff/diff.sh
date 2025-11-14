@@ -39,6 +39,7 @@ generate_diff_output() {
 
 # Discover all unique suffixes from directory names
 suffixes=()
+invalids=()
 while IFS= read -r dir; do
     basename=$(basename "$dir")
     # Extract suffix after last hyphen
@@ -48,8 +49,24 @@ while IFS= read -r dir; do
         if [[ ${#suffixes[@]} -eq 0 ]] || [[ ! " ${suffixes[@]} " =~ " ${suffix} " ]]; then
             suffixes+=("$suffix")
         fi
+    # Add into invalids if wrong suffix is used
+    else 
+        invalids+=("$basename") 
     fi
-done < <(find "${INPUTS_PATH}" -maxdepth 1 -mindepth 1 -type d -name '*-*')
+done < <(find "${INPUTS_PATH}" -maxdepth 1 -mindepth 1 -type d)
+
+# Prompt the invalid suffixes so the user can fix them. The correct format is dash suffixes
+if [[ ${#invalids[@]i} -gt 0 ]];then
+    echo "Found invalid cluster name(s):"
+    echo "-----------------------------"
+    for invalid in "${invalids[@]}"; do
+         echo "The cluster name: ${invalid} is invalid"
+    done
+        echo
+        echo "Please note that all cluster names should have the dash suffix (-)."
+        echo "Examples: \"-prod\",\"-dev\" and \"-sandbox\"".
+    echo "-----------------------------"
+fi
 
 for suffix in "${suffixes[@]}"; do
     echo "found: ${suffix}"
@@ -59,6 +76,8 @@ done
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
+# Process each suffix concurretly for improved performance on large repositories
+# Background execution (&) significantly reduces processing time for extensive configurations
 for suffix in "${suffixes[@]}"; do
     (
         diff_output="$(generate_diff_output "*-${suffix}")"
@@ -67,7 +86,7 @@ for suffix in "${suffixes[@]}"; do
             printf '%s\n' "$diff_output"
             echo 'EOF'
         } > "$tmpdir/${suffix}.out"
-    ) &
+    ) & 
 done
 
 wait

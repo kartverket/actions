@@ -5,7 +5,7 @@
     name: 'testtest-dev-dev',
   },
   spec: {
-    image: 'testtest-duplicate',
+    image: 'testtest-duplicates',
     port: 200220,
   },
 }

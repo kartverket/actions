@@ -15,7 +15,7 @@ To run the local test script you need `skipctl` on your machine
 Contains the script logic.
 
 **What it does?**
-- Finds all manifest files inside subdirectories of `INPUTS_PATH` and groups them based on directory suffix e.g. `-dev`, `-prod`, `-sandbox`).
+- Finds all manifest files inside subdirectories of `INPUTS_PATH` and groups them based on directory suffix. Examples: `-dev`, `-prod`, `-sandbox`.
 - Runs `skipctl manifests diff` on these files
 - Formats the output with a HTML `<details>` tag
 - Outputs the results to `GITHUB_OUTPUT`
