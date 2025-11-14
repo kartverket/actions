@@ -67,6 +67,7 @@ if [[ ${#invalids[@]i} -gt 0 ]];then
     echo "Examples: \"-prod\",\"-dev\" and \"-sandbox\"".
     echo "-------------------------------------------------------------------"
     echo
+    exit 1
 fi
 
 echo "diffing clusters with environments:"
