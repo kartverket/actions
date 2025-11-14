@@ -3,7 +3,7 @@
 ## `action.yaml`
 Defines the manifest diff action.
 
-**Prerequisit** 
+**Prerequisites** 
 To run the local test script you need `skipctl` on your machine
 
 **What it does?**
