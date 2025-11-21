@@ -56,7 +56,7 @@ while IFS= read -r dir; do
 done < <(find "${INPUTS_PATH}" -maxdepth 1 -mindepth 1 -type d)
 
 # Prompt the invalid suffixes so the user can fix them. The correct format is dash suffixes
-if [[ ${#invalids[@]i} -gt 0 ]];then
+if [[ ${#invalids[@]} -gt 0 ]];then
     echo "WARNING: Found invalid cluster name(s):"
     for invalid in "${invalids[@]}"; do
          echo "'${invalid}' is invalid (skipped)"
