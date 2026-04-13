@@ -125,7 +125,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
 
-    - uses: actions/github-script@v8
+    - uses: actions/github-script@v9
       name: Add PR comment
       if: always() && (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && inputs.comment_on_pr == 'true'
       env:
