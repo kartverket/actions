@@ -50,6 +50,10 @@ runs:
       shell: bash
       env:
         TEST_PATH: ${{ inputs.path }}
+        # Disable ANSI color codes so the captured output is plain text —
+        # otherwise the step summary renders escape sequences as literal
+        # garbage when wrapped in a code block.
+        NO_COLOR: '1'
       run: |
         set -euo pipefail
 
