@@ -11,7 +11,7 @@ description: |
   `docker/login-action`); the action does not handle credentials.
 
 inputs:
-  rego-path:
+  path:
     description: |
       Path to the Rego directory to bundle. Resolves relative to the workspace.
     required: true
@@ -34,12 +34,6 @@ inputs:
       applied in addition to these. Ignored when `push` is `'false'`.
     required: false
     default: ''
-  list-contents:
-    description: |
-      If `true`, runs `tar -tzf bundle.tar.gz` after the build so the bundle's
-      contents appear in the job log.
-    required: false
-    default: 'true'
 
 outputs:
   bundle-path:
@@ -92,24 +86,22 @@ runs:
       if: steps.check-oras.outputs.installed != 'true'
       uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
 
-    - name: Build OPA bundle
+    - id: build
+      name: Build OPA bundle
       shell: bash
       env:
-        REGO_PATH: ${{ inputs.rego-path }}
-        LIST_CONTENTS: ${{ inputs.list-contents }}
+        REGO_PATH: ${{ inputs.path }}
       run: |
         set -euo pipefail
 
         if [[ ! -e "$REGO_PATH" ]]; then
-          echo "::error::rego-path does not exist: $REGO_PATH"
+          echo "::error::path does not exist: $REGO_PATH"
           exit 1
         fi
 
         opa build -b "$REGO_PATH" --ignore '*_test.rego' -o bundle.tar.gz
-
-        if [[ "$LIST_CONTENTS" == "true" ]]; then
-          tar -tzf bundle.tar.gz
-        fi
+        tar -tzf bundle.tar.gz
+        echo "bundle-path=bundle.tar.gz" >> "$GITHUB_OUTPUT"
 
     - id: push
       name: Push bundle to registry
@@ -151,6 +143,7 @@ runs:
       if: always()
       shell: bash
       env:
+        BUNDLE_PATH: bundle.tar.gz
         PUSH: ${{ inputs.push }}
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
         DIGEST: ${{ steps.push.outputs.digest }}
@@ -160,20 +153,29 @@ runs:
         {
           echo "## OPA bundle"
           echo ""
-          if [[ ! -f bundle.tar.gz ]]; then
+          if [[ ! -f "$BUNDLE_PATH" ]]; then
             # Build step failed before producing the tarball.
             echo "_Bundle was not built._"
-          elif [[ "$PUSH" == "true" && -n "$DIGEST" ]]; then
-            # Pushed successfully — render the full image ref + per-tag list.
-            echo "**Image:** \`${IMAGE_REF}\`"
-            echo ""
-            echo "**Tags:**"
-            IFS=',' read -ra TAG_ARR <<< "$TAGS"
-            for t in "${TAG_ARR[@]}"; do
-              echo "- \`${ARTIFACT_NAME}:${t}\`"
-            done
           else
-            # Built but not pushed: either push=false or the push step failed.
-            echo "_Bundle was built (\`bundle.tar.gz\`) but not pushed._"
+            if [[ "$PUSH" == "true" && -n "$DIGEST" ]]; then
+              echo "**Image:** \`${IMAGE_REF}\`"
+              echo ""
+              echo "**Tags:**"
+              IFS=',' read -ra TAG_ARR <<< "$TAGS"
+              for t in "${TAG_ARR[@]}"; do
+                echo "- \`${ARTIFACT_NAME}:${t}\`"
+              done
+              echo ""
+            else
+              # Built but not pushed: either push=false or the push step failed.
+              echo "_Bundle was built (\`${BUNDLE_PATH}\`) but not pushed._"
+              echo ""
+            fi
+
+            echo "**Bundle contents:**"
+            echo ""
+            echo '```'
+            tar -tzf "$BUNDLE_PATH"
+            echo '```'
           fi
         } >> "$GITHUB_STEP_SUMMARY"

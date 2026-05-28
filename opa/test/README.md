@@ -1,67 +1,68 @@
-# opa-test
+# OPA Test
 
-Runs `opa test` against a Rego directory (or file), capturing both test
-results and coverage as JSON files for downstream consumption. Fails the step
-on any failing tests. Coverage capture is best-effort and does not affect step
-outcome on its own.
+Runs `opa test` against a Rego directory (or file), captures the human-readable
+results and the overall coverage percentage, writes a step summary, and fails
+the step on any failing tests.
 
 ## Prerequisites
 
-None — the action installs OPA automatically when `opa` isn't on PATH.
+OPA is installed automatically when `opa` isn't already on PATH. To pin a
+specific version, run
+[`open-policy-agent/setup-opa`](https://github.com/open-policy-agent/setup-opa)
+earlier in the calling workflow and the action will skip its own install step.
 
 ## Inputs
 
 | Name | Required | Description |
 |------|----------|-------------|
-| `test-path` | yes | Path to the Rego directory (or file) to test. Resolves relative to the workspace. |
+| `path` | yes | Path to the Rego directory (or file) to test. Resolves relative to the workspace. |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| `results-file` | Path of the test results JSON (always `opa-test-results.json` in the workspace). |
-| `coverage-file` | Path of the coverage JSON (always `opa-coverage.json` in the workspace). |
+| `results-file` | Path of the human-readable test output (always `opa-test-output.txt` in the workspace). |
+| `coverage` | Overall test coverage as a number (e.g. `85.7`). Extracted from `opa test --coverage --format=json` and falls back to `0` if it can't be parsed. |
 | `exit-code` | `opa test` exit code as a string. `"0"` means all tests passed. |
-
-Both files are written in the formats OPA emits when called with
-`--format=json` (results) and `--coverage --format=json` (coverage).
 
 ## Behavior
 
-- A missing path fails fast with a clear error.
-- OPA quirk: passing `--coverage` together with `--format=json` *replaces* the
-  test-result JSON with a coverage-only JSON. To capture both, this action runs
-  `opa test` twice. The first run determines step success; the second is
-  best-effort and never fails the step on its own.
-- `--fail-on-empty` is passed so a run where no tests were discovered counts as
-  a failure (catches typos in `test-path` and missing test files).
-- Per-test status and overall coverage are echoed to the job log as the run
-  progresses, before the JSON files are read by a later summary step.
-- On failures the action mirrors the non-zero exit code as a step failure via
-  `core.setFailed`. Use `if: always()` on summary steps that should still render.
+- A missing `path` fails fast with a clear error.
+- The action runs `opa test` twice:
+  1. `--coverage --format=json` — output parsed with `jq` to extract the
+     overall coverage percentage. Best-effort: if the JSON can't be parsed,
+     the `coverage` output falls back to `0` without failing the step.
+  2. `--fail-on-empty` (default format) — streamed to the job log live and
+     captured to `opa-test-output.txt` for the step summary. This run also
+     determines the step's success/failure.
+- `--fail-on-empty` ensures a run that discovers no tests counts as a failure,
+  catching typos in `path` and missing test files.
+- The step summary embeds the test output verbatim plus the coverage
+  percentage on a separate line.
 
 ## Example
 
 ```yaml
-- uses: open-policy-agent/setup-opa@<sha>
-- uses: kartverket/actions/opa/opa-test@<sha>
-  with:
-    test-path: policies
-```
-
-Reading the outputs in a later step:
-
-```yaml
-- uses: kartverket/actions/opa/opa-test@<sha>
+- uses: actions/checkout@<sha>
+- uses: kartverket/actions/opa/test@<sha>
   id: test
   with:
-    test-path: policies
+    path: opa
+
+- run: echo "Coverage was ${{ steps.test.outputs.coverage }}%"
+```
+
+Uploading the test output as an artifact for later inspection:
+
+```yaml
+- uses: kartverket/actions/opa/test@<sha>
+  id: test
+  with:
+    path: opa
 
 - if: always()
   uses: actions/upload-artifact@<sha>
   with:
-    name: opa-test-results
-    path: |
-      ${{ steps.test.outputs.results-file }}
-      ${{ steps.test.outputs.coverage-file }}
+    name: opa-test-output
+    path: ${{ steps.test.outputs.results-file }}
 ```

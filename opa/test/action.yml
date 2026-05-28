@@ -8,7 +8,7 @@ description: |
   The action will install OPA automatically if it isn't already on PATH.
 
 inputs:
-  test-path:
+  path:
     description: |
       Path to the Rego directory (or file) to test. Resolves relative to the
       workspace.
@@ -16,11 +16,11 @@ inputs:
 
 outputs:
   results-file:
-    description: 'Path of the test results JSON written to the workspace.'
-    value: 'opa-test-results.json'
-  coverage-file:
-    description: 'Path of the coverage JSON written to the workspace.'
-    value: 'opa-coverage.json'
+    description: 'Path of the human-readable test output written to the workspace.'
+    value: 'opa-test-output.txt'
+  coverage:
+    description: 'The test coverage in percentage.'
+    value: ${{ steps.test.outputs.coverage }}
   exit-code:
     description: '`opa test` exit code (0 = all passed).'
     value: ${{ steps.test.outputs.exit-code }}
@@ -49,33 +49,29 @@ runs:
       name: Run opa test
       shell: bash
       env:
-        TEST_PATH: ${{ inputs.test-path }}
+        TEST_PATH: ${{ inputs.path }}
+        # Disable ANSI color codes so the captured output is plain text —
+        # otherwise the step summary renders escape sequences as literal
+        # garbage when wrapped in a code block.
+        NO_COLOR: '1'
       run: |
         set -euo pipefail
 
         if [[ ! -e "$TEST_PATH" ]]; then
-          echo "::error::test-path does not exist: $TEST_PATH"
+          echo "::error::path does not exist: $TEST_PATH"
           exit 1
         fi
 
-        # OPA quirk: passing `--coverage` together with `--format=json` REPLACES
-        # the test-result JSON with a coverage-only JSON. To capture both, we
-        # have to invoke `opa test` twice (plus a third run in default format
-        # to print readable output to the job log + capture for the summary).
-        # The first run determines step success; the others are best-effort and
-        # never fail the step. `bash -e` would abort on the first non-zero exit,
-        # so we capture exit codes via `||` instead.
-        TEST_EXIT=0
-        opa test --fail-on-empty --format=json "$TEST_PATH" \
-          > opa-test-results.json || TEST_EXIT=$?
-        opa test --coverage --format=json "$TEST_PATH" \
-          > opa-coverage.json || true
+        coverage_json=$(opa test --coverage --format=json "$TEST_PATH" 2>/dev/null || true)
+        coverage=$(jq -r '.coverage // 0' <<< "$coverage_json" 2>/dev/null || echo "0")
+        echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
 
-        # Stream readable output to the log live AND capture to a file so the
-        # summary step can embed it. `--coverage` adds a coverage section at the
-        # end of the report.
-        opa test --fail-on-empty --coverage "$TEST_PATH" 2>&1 \
-          | tee opa-test-output.txt || true
+        # `set -e` would abort here on a failing test, so we capture the
+        # pipeline's exit code via `||`. `tee` always returns 0, so under
+        # `pipefail` the pipeline's exit code mirrors opa test's.
+        TEST_EXIT=0
+        opa test --fail-on-empty "$TEST_PATH" 2>&1 \
+          | tee opa-test-output.txt || TEST_EXIT=$?
 
         echo "exit-code=$TEST_EXIT" >> "$GITHUB_OUTPUT"
 
@@ -87,6 +83,8 @@ runs:
     - name: Write step summary
       if: always()
       shell: bash
+      env:
+        COVERAGE: ${{ steps.test.outputs.coverage }}
       run: |
         {
           echo "## OPA test"
@@ -95,6 +93,10 @@ runs:
             echo '```'
             cat opa-test-output.txt
             echo '```'
+            echo ""
+            if [[ -n "$COVERAGE" ]]; then
+              echo "**Coverage:** ${COVERAGE}%"
+            fi
           else
             echo "_Tests did not run._"
           fi

@@ -20,7 +20,8 @@ jobs:
   # Builds the testdata policies and verifies that:
   #   - the bundle file is produced at the expected path,
   #   - test files (`*_test.rego`) are excluded from the bundle,
-  #   - production policy files are present in the bundle.
+  #   - production policy files are present in the bundle,
+  #   - push-only outputs (digest, tags, image-ref) stay empty when push=false.
   build-push-happy-path:
     name: 'build-push: build only (push=false)'
     runs-on: ubuntu-latest
@@ -30,12 +31,15 @@ jobs:
       - id: build
         uses: ./opa/build-push
         with:
-          rego-path: opa/build-push/testdata/policies
+          path: opa/build-push/testdata/policies
           push: 'false'
 
       - name: Verify bundle output
         env:
           BUNDLE_PATH: ${{ steps.build.outputs.bundle-path }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.build.outputs.tags }}
+          IMAGE_REF: ${{ steps.build.outputs.image-ref }}
         run: |
           set -euo pipefail
 
@@ -62,10 +66,19 @@ jobs:
             fi
           done
 
-  # Verifies the action fails fast (with the expected error) when `rego-path`
+          # With push=false, push-only outputs should be empty.
+          for name in DIGEST TAGS IMAGE_REF; do
+            value=$(printenv "$name")
+            if [[ -n "$value" ]]; then
+              echo "::error::Expected $name to be empty when push=false, got: $value"
+              exit 1
+            fi
+          done
+
+  # Verifies the action fails fast (with the expected error) when `path`
   # doesn't exist on disk.
   build-push-missing-path:
-    name: 'build-push: fails when rego-path missing'
+    name: 'build-push: fails when path missing'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -74,7 +87,7 @@ jobs:
         uses: ./opa/build-push
         continue-on-error: true
         with:
-          rego-path: opa/build-push/testdata/does-not-exist
+          path: opa/build-push/testdata/does-not-exist
           push: 'false'
 
       - name: Assert the build step failed
@@ -86,8 +99,8 @@ jobs:
             exit 1
           fi
 
-  # Lints the `clean` testdata fixture — should succeed with zero violations
-  # and produce a regal-results.json with an empty `violations` array.
+  # Lints the `clean` testdata fixture — should succeed and produce a SARIF
+  # report containing zero results.
   lint-clean:
     name: 'lint: clean policies pass'
     runs-on: ubuntu-latest
@@ -97,29 +110,37 @@ jobs:
       - id: lint
         uses: ./opa/lint
         with:
-          rego-path: opa/lint/testdata/clean
+          path: opa/lint/testdata/clean
+          # Skip Code Scanning upload in CI — this workflow only verifies the
+          # action's local behaviour, not the upload integration.
+          upload-sarif: 'false'
 
-      - name: Verify outputs
+      - name: Verify SARIF report has no findings
         env:
-          EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
-          RESULTS_FILE: ${{ steps.lint.outputs.results-file }}
+          OUTCOME: ${{ steps.lint.outcome }}
         run: |
           set -euo pipefail
 
-          if [[ "$EXIT_CODE" != "0" ]]; then
-            echo "::error::Expected exit-code 0, got '$EXIT_CODE'"
+          if [[ "$OUTCOME" != "success" ]]; then
+            echo "::error::Expected lint step to succeed, got outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [[ ! -f regal-results.sarif ]]; then
+            echo "::error::regal-results.sarif was not produced"
             exit 1
           fi
 
-          violations=$(jq '.violations | length' "$RESULTS_FILE")
-          if [[ "$violations" != "0" ]]; then
-            echo "::error::Expected 0 violations, got $violations"
-            jq '.violations' "$RESULTS_FILE"
+          # SARIF places findings under `.runs[0].results`.
+          results=$(jq '.runs[0].results | length' regal-results.sarif)
+          if [[ "$results" != "0" ]]; then
+            echo "::error::Expected 0 SARIF results, got $results"
+            jq '.runs[0].results' regal-results.sarif
             exit 1
           fi
 
   # Lints the `violations` testdata fixture (deliberately badly-formatted Rego)
-  # — should fail with a non-zero exit code and report at least one violation.
+  # — should fail with a non-zero exit code and report at least one SARIF
+  # finding.
   lint-violations:
     name: 'lint: violations cause failure'
     runs-on: ubuntu-latest
@@ -130,13 +151,12 @@ jobs:
         uses: ./opa/lint
         continue-on-error: true
         with:
-          rego-path: opa/lint/testdata/violations
+          path: opa/lint/testdata/violations
+          upload-sarif: 'false'
 
       - name: Verify the lint step failed and recorded violations
         env:
           OUTCOME: ${{ steps.lint.outcome }}
-          EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
-          RESULTS_FILE: ${{ steps.lint.outputs.results-file }}
         run: |
           set -euo pipefail
 
@@ -144,20 +164,20 @@ jobs:
             echo "::error::Expected lint step to fail, got outcome '$OUTCOME'"
             exit 1
           fi
-          if [[ "$EXIT_CODE" == "0" ]]; then
-            echo "::error::Expected non-zero exit-code, got '$EXIT_CODE'"
+          if [[ ! -f regal-results.sarif ]]; then
+            echo "::error::regal-results.sarif was not produced"
             exit 1
           fi
 
-          violations=$(jq '.violations | length' "$RESULTS_FILE")
-          if (( violations < 1 )); then
-            echo "::error::Expected at least one violation, got $violations"
+          results=$(jq '.runs[0].results | length' regal-results.sarif)
+          if (( results < 1 )); then
+            echo "::error::Expected at least one SARIF result, got $results"
             exit 1
           fi
-          echo "Recorded $violations violation(s) as expected."
+          echo "Recorded $results SARIF result(s) as expected."
 
-  # Runs the `passing` testdata fixture — should succeed and report all tests
-  # as passing in the results JSON.
+  # Runs the `passing` testdata fixture — should succeed, expose a numeric
+  # coverage percentage, and write a non-empty test output file.
   test-passing:
     name: 'test: passing tests succeed'
     runs-on: ubuntu-latest
@@ -167,13 +187,13 @@ jobs:
       - id: test
         uses: ./opa/test
         with:
-          test-path: opa/test/testdata/passing
+          path: opa/test/testdata/passing
 
       - name: Verify outputs
         env:
           EXIT_CODE: ${{ steps.test.outputs.exit-code }}
           RESULTS_FILE: ${{ steps.test.outputs.results-file }}
-          COVERAGE_FILE: ${{ steps.test.outputs.coverage-file }}
+          COVERAGE: ${{ steps.test.outputs.coverage }}
         run: |
           set -euo pipefail
 
@@ -182,26 +202,21 @@ jobs:
             exit 1
           fi
 
-          failed=$(jq '[.[] | select(.fail == true)] | length' "$RESULTS_FILE")
-          errored=$(jq '[.[] | select(.error != null)] | length' "$RESULTS_FILE")
-          total=$(jq 'length' "$RESULTS_FILE")
-          if (( total == 0 )); then
-            echo "::error::No tests were reported in $RESULTS_FILE"
-            exit 1
-          fi
-          if (( failed != 0 || errored != 0 )); then
-            echo "::error::Expected all tests to pass; got $failed failed, $errored errored (of $total)"
+          if [[ ! -s "$RESULTS_FILE" ]]; then
+            echo "::error::Test output is missing or empty at $RESULTS_FILE"
             exit 1
           fi
 
-          if [[ ! -f "$COVERAGE_FILE" ]]; then
-            echo "::error::Coverage file was not produced at $COVERAGE_FILE"
+          # Coverage must be a non-negative number (e.g. "85" or "85.7").
+          if [[ ! "$COVERAGE" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Coverage output is not a number: '$COVERAGE'"
             exit 1
           fi
+          echo "Tests passed with coverage ${COVERAGE}%."
 
   # Runs the `failing` testdata fixture (an assertion that contradicts the
-  # policy) — should fail with a non-zero exit code and report at least one
-  # failing test.
+  # policy) — should fail with a non-zero exit code, and the captured output
+  # file should contain a FAIL marker.
   test-failing:
     name: 'test: failing tests cause failure'
     runs-on: ubuntu-latest
@@ -212,7 +227,7 @@ jobs:
         uses: ./opa/test
         continue-on-error: true
         with:
-          test-path: opa/test/testdata/failing
+          path: opa/test/testdata/failing
 
       - name: Verify the test step failed and recorded a failing test
         env:
@@ -231,9 +246,9 @@ jobs:
             exit 1
           fi
 
-          failed=$(jq '[.[] | select(.fail == true)] | length' "$RESULTS_FILE")
-          if (( failed < 1 )); then
-            echo "::error::Expected at least one failing test, got $failed"
+          if ! grep -q 'FAIL' "$RESULTS_FILE"; then
+            echo "::error::Expected a FAIL marker in $RESULTS_FILE"
+            cat "$RESULTS_FILE"
             exit 1
           fi
-          echo "Recorded $failed failing test(s) as expected."
+          echo "Failing test was reported as expected."
