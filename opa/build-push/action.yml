@@ -1,0 +1,147 @@
+name: 'OPA Build and Push'
+description: |
+  Builds an OPA bundle (`bundle.tar.gz`) from a Rego directory and pushes it to
+  an OCI registry with one or more tags. Test files (`*_test.rego`) are excluded
+  so the production bundle stays lean.
+
+  Prerequisites:
+    - OPA must be installed on the runner (`open-policy-agent/setup-opa`).
+    - ORAS must be installed on the runner (`oras-project/setup-oras`).
+    - The runner must already be authenticated to the target registry
+      (`docker/login-action`).
+
+inputs:
+  rego-path:
+    description: |
+      Path to the Rego directory to bundle. Resolves relative to the workspace.
+    required: true
+  push:
+    description: |
+      If `'true'` (default), pushes the built bundle to the registry. Set to
+      `'false'` to build only — useful for PR validation where the push happens
+      on merge.
+    required: false
+    default: 'true'
+  artifact-name:
+    description: |
+      Full OCI reference (without tag) the bundle will be pushed to. Example:
+      `ghcr.io/kartverket/accesserator/opa-bundle`. Required when `push` is `'true'`.
+    required: false
+    default: ''
+  additional-tags:
+    description: |
+      Extra tags to apply to the bundle, one per line. `sha-<commit>` is always
+      applied in addition to these. Ignored when `push` is `'false'`.
+    required: false
+    default: ''
+  list-contents:
+    description: |
+      If `true`, runs `tar -tzf bundle.tar.gz` after the build so the bundle's
+      contents appear in the job log.
+    required: false
+    default: 'true'
+
+outputs:
+  bundle-path:
+    description: 'Path to the local bundle file (always `bundle.tar.gz`).'
+    value: 'bundle.tar.gz'
+  digest:
+    description: 'Manifest digest of the pushed bundle (e.g. `sha256:...`).'
+    value: ${{ steps.push.outputs.digest }}
+  tags:
+    description: 'Comma-joined list of tags applied to the pushed bundle.'
+    value: ${{ steps.push.outputs.tags }}
+  image-ref:
+    description: |
+      Fully qualified `<artifact-name>@<digest>` reference. Use this for
+      cosign signing or provenance attestation.
+    value: ${{ steps.push.outputs.image-ref }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build OPA bundle
+      shell: bash
+      env:
+        REGO_PATH: ${{ inputs.rego-path }}
+        LIST_CONTENTS: ${{ inputs.list-contents }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! -e "$REGO_PATH" ]]; then
+          echo "::error::rego-path does not exist: $REGO_PATH"
+          exit 1
+        fi
+
+        opa build -b "$REGO_PATH" --ignore '*_test.rego' -o bundle.tar.gz
+
+        if [[ "$LIST_CONTENTS" == "true" ]]; then
+          tar -tzf bundle.tar.gz
+        fi
+
+    - id: push
+      name: Push bundle to registry
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        ADDITIONAL_TAGS: ${{ inputs.additional-tags }}
+        SHA_TAG: sha-${{ github.sha }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "$ARTIFACT_NAME" ]]; then
+          echo "::error::artifact-name is required when push is 'true'"
+          exit 1
+        fi
+
+        # Build a comma-joined tag list. `sha-<commit>` always goes first; extra
+        # tags are appended in caller-supplied order. Whitespace inside each tag
+        # is stripped so YAML block scalars with indentation work cleanly.
+        tag_list="$SHA_TAG"
+        while IFS= read -r t; do
+          t="${t//[[:space:]]/}"
+          [[ -z "$t" ]] && continue
+          tag_list="${tag_list},${t}"
+        done <<< "$ADDITIONAL_TAGS"
+
+        # ORAS accepts a comma-joined tag list inside the ref (`...:tag1,tag2`)
+        # and applies all of them to the same manifest digest in a single push.
+        digest=$(oras push "${ARTIFACT_NAME}:${tag_list}" \
+          bundle.tar.gz:application/vnd.oci.image.layer.v1.tar+gzip \
+          --format json | jq -r '.digest')
+
+        echo "digest=$digest" >> "$GITHUB_OUTPUT"
+        echo "tags=$tag_list" >> "$GITHUB_OUTPUT"
+        echo "image-ref=${ARTIFACT_NAME}@${digest}" >> "$GITHUB_OUTPUT"
+
+    - name: Write step summary
+      if: always()
+      shell: bash
+      env:
+        PUSH: ${{ inputs.push }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        DIGEST: ${{ steps.push.outputs.digest }}
+        TAGS: ${{ steps.push.outputs.tags }}
+        IMAGE_REF: ${{ steps.push.outputs.image-ref }}
+      run: |
+        {
+          echo "## OPA bundle"
+          echo ""
+          if [[ ! -f bundle.tar.gz ]]; then
+            # Build step failed before producing the tarball.
+            echo "_Bundle was not built._"
+          elif [[ "$PUSH" == "true" && -n "$DIGEST" ]]; then
+            # Pushed successfully — render the full image ref + per-tag list.
+            echo "**Image:** \`${IMAGE_REF}\`"
+            echo ""
+            echo "**Tags:**"
+            IFS=',' read -ra TAG_ARR <<< "$TAGS"
+            for t in "${TAG_ARR[@]}"; do
+              echo "- \`${ARTIFACT_NAME}:${t}\`"
+            done
+          else
+            # Built but not pushed: either push=false or the push step failed.
+            echo "_Bundle was built (\`bundle.tar.gz\`) but not pushed._"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
