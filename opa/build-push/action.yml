@@ -4,11 +4,11 @@ description: |
   an OCI registry with one or more tags. Test files (`*_test.rego`) are excluded
   so the production bundle stays lean.
 
-  Prerequisites:
-    - OPA must be installed on the runner (`open-policy-agent/setup-opa`).
-    - ORAS must be installed on the runner (`oras-project/setup-oras`).
-    - The runner must already be authenticated to the target registry
-      (`docker/login-action`).
+  The action will install OPA and ORAS automatically if they aren't already on
+  PATH.
+
+  The runner must already be authenticated to the target registry (use
+  `docker/login-action`); the action does not handle credentials.
 
 inputs:
   rego-path:
@@ -60,6 +60,38 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Check OPA installation
+      id: check-opa
+      shell: bash
+      run: |
+        if command -v opa >/dev/null 2>&1; then
+          echo "OPA already installed: $(opa version 2>/dev/null | head -1 || true)"
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Setup OPA
+      if: steps.check-opa.outputs.installed != 'true'
+      uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+      with:
+        version: '1.16.2'
+
+    - name: Check ORAS installation
+      id: check-oras
+      shell: bash
+      run: |
+        if command -v oras >/dev/null 2>&1; then
+          echo "ORAS already installed: $(oras version 2>/dev/null | head -1 || true)"
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Setup ORAS
+      if: steps.check-oras.outputs.installed != 'true'
+      uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
+
     - name: Build OPA bundle
       shell: bash
       env:
