@@ -1,4 +1,4 @@
-package example
+package clean
 
 default allow := false
 
