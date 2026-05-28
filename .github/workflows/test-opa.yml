@@ -30,7 +30,7 @@ jobs:
       - id: build
         uses: ./opa/build-push
         with:
-          rego-path: opa/build-push/testdata/policies
+          path: opa/build-push/testdata/policies
           push: 'false'
 
       - name: Verify bundle output
@@ -74,7 +74,7 @@ jobs:
         uses: ./opa/build-push
         continue-on-error: true
         with:
-          rego-path: opa/build-push/testdata/does-not-exist
+          path: opa/build-push/testdata/does-not-exist
           push: 'false'
 
       - name: Assert the build step failed
@@ -97,7 +97,8 @@ jobs:
       - id: lint
         uses: ./opa/lint
         with:
-          rego-path: opa/lint/testdata/clean
+          path: opa/lint/testdata/clean
+          upload-sarif: 'false'
 
       - name: Verify outputs
         env:
@@ -130,7 +131,8 @@ jobs:
         uses: ./opa/lint
         continue-on-error: true
         with:
-          rego-path: opa/lint/testdata/violations
+          path: opa/lint/testdata/violations
+          upload-sarif: 'false'
 
       - name: Verify the lint step failed and recorded violations
         env:
@@ -167,7 +169,7 @@ jobs:
       - id: test
         uses: ./opa/test
         with:
-          test-path: opa/test/testdata/passing
+          path: opa/test/testdata/passing
 
       - name: Verify outputs
         env:
@@ -212,7 +214,7 @@ jobs:
         uses: ./opa/test
         continue-on-error: true
         with:
-          test-path: opa/test/testdata/failing
+          path: opa/test/testdata/failing
 
       - name: Verify the test step failed and recorded a failing test
         env:
