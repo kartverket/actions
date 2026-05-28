@@ -6,11 +6,12 @@ the production bundle stays lean.
 
 ## Prerequisites
 
-All three need to be set up earlier in the workflow:
+The action installs OPA and ORAS automatically when they aren't on PATH.
 
-- [`open-policy-agent/setup-opa`](https://github.com/open-policy-agent/setup-opa) — to run `opa build`.
-- [`oras-project/setup-oras`](https://github.com/oras-project/setup-oras) — to push the bundle as an OCI artifact.
-- [`docker/login-action`](https://github.com/docker/login-action) (or equivalent) — to authenticate to the target registry.
+Registry credentials are not installed by this action — the runner must
+already be authenticated to the target registry:
+
+- [`docker/login-action`](https://github.com/docker/login-action) (or equivalent).
 
 ## Inputs
 

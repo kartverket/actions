@@ -6,8 +6,7 @@ summary), and fails the step on any violations.
 
 ## Prerequisites
 
-Regal must already be installed on the runner. Set it up earlier in the workflow
-with [`open-policy-agent/setup-regal`](https://github.com/open-policy-agent/setup-regal).
+None — the action installs Regal automatically when `regal` isn't on PATH.
 
 ## Inputs
 

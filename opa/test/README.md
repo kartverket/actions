@@ -7,8 +7,7 @@ outcome on its own.
 
 ## Prerequisites
 
-OPA must already be installed on the runner. Set it up earlier in the workflow
-with [`open-policy-agent/setup-opa`](https://github.com/open-policy-agent/setup-opa).
+None — the action installs OPA automatically when `opa` isn't on PATH.
 
 ## Inputs
 

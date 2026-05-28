@@ -4,8 +4,7 @@ description: |
   as JSON for downstream consumption, writes a step summary, and fails the step
   on any violations.
 
-  Prerequisite: Regal must already be installed on the runner. Use
-  `open-policy-agent/setup-regal` in the calling workflow before this action.
+  The action will install Regal automatically if it isn't already on PATH.
 
 inputs:
   rego-path:
@@ -25,6 +24,23 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Check Regal installation
+      id: check-regal
+      shell: bash
+      run: |
+        if command -v regal >/dev/null 2>&1; then
+          echo "Regal already installed: $(regal version 2>/dev/null | head -1 || true)"
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Setup Regal
+      if: steps.check-regal.outputs.installed != 'true'
+      uses: open-policy-agent/setup-regal@761188c3b435761fa254beca508a44875619648f # v2.0.0
+      with:
+        version: 'v0.40.0'
+
     - id: lint
       name: Run Regal
       shell: bash

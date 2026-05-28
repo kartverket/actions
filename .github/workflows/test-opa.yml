@@ -27,10 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
-        with:
-          version: '1.16.2'
-
       - id: build
         uses: ./opa/build-push
         with:
@@ -74,10 +70,6 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
-        with:
-          version: '1.16.2'
-
       - id: build
         uses: ./opa/build-push
         continue-on-error: true
@@ -101,8 +93,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: open-policy-agent/setup-regal@761188c3b435761fa254beca508a44875619648f # v2.0.0
 
       - id: lint
         uses: ./opa/lint
@@ -135,8 +125,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: open-policy-agent/setup-regal@761188c3b435761fa254beca508a44875619648f # v2.0.0
 
       - id: lint
         uses: ./opa/lint
@@ -175,10 +163,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
-        with:
-          version: '1.16.2'
 
       - id: test
         uses: ./opa/test
@@ -223,10 +207,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
-        with:
-          version: '1.16.2'
 
       - id: test
         uses: ./opa/test
