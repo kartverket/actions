@@ -1,25 +1,25 @@
 name: 'OPA Lint'
 description: |
-  Runs Regal linting against a Rego directory (or file), captures the results
-  as JSON for downstream consumption, writes a step summary, and fails the step
-  on any violations.
+  Runs Regal linting against a Rego directory (or file), emits a SARIF report
+  for GitHub Code Scanning, writes a step summary, and fails the step on any
+  violations.
 
   The action will install Regal automatically if it isn't already on PATH.
 
 inputs:
-  rego-path:
+  path:
     description: |
       Path to the Rego directory (or file) to lint. Resolves relative to the
       workspace.
     required: true
-
-outputs:
-  results-file:
-    description: 'Path of the Regal JSON results file written to the workspace.'
-    value: 'regal-results.json'
-  exit-code:
-    description: 'Regal exit code (0 = clean, non-zero = violations found).'
-    value: ${{ steps.lint.outputs.exit-code }}
+  upload-sarif:
+    description: |
+      If `'true'` (default), uploads the Regal SARIF report to GitHub Code
+      Scanning so violations appear as alerts in the Security tab and inline
+      in PR diffs. Requires `security-events: write` in the calling workflow's
+      permissions. Set to `'false'` to skip the upload.
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -45,31 +45,44 @@ runs:
       name: Run Regal
       shell: bash
       env:
-        REGO_PATH: ${{ inputs.rego-path }}
+        REGO_PATH: ${{ inputs.path }}
       run: |
         set -euo pipefail
 
         if [[ ! -e "$REGO_PATH" ]]; then
-          echo "::error::rego-path does not exist: $REGO_PATH"
+          echo "::error::path does not exist: $REGO_PATH"
           exit 1
         fi
 
         # Two runs of regal over the same path:
-        #   1. JSON mode, captured to disk for downstream consumption.
+        #   1. SARIF mode, captured to disk for Code Scanning upload.
         #   2. Default (pretty) mode, streamed to the job log live AND captured
         #      to a file so the summary step can embed it.
         # `bash -e` would abort on the first non-zero exit, so we capture the
         # exit code via `||` instead.
         LINT_EXIT=0
-        regal lint --format json "$REGO_PATH" > regal-results.json || LINT_EXIT=$?
+        regal lint --format sarif "$REGO_PATH" > regal-results.sarif || LINT_EXIT=$?
         regal lint "$REGO_PATH" 2>&1 | tee regal-output.txt || true
 
         echo "exit-code=$LINT_EXIT" >> "$GITHUB_OUTPUT"
 
         if [[ "$LINT_EXIT" -ne 0 ]]; then
           echo "::error::Regal found violations (exit $LINT_EXIT)."
-          exit "$LINT_EXIT"
         fi
+
+    - name: Upload SARIF to Code Scanning
+      if: ${{ inputs.upload-sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@84498526a009a99c875e83ef4821a8ba52de7c22 # v4.36.0
+      with:
+        sarif_file: regal-results.sarif
+        category: regal
+
+    - name: Fail on violations
+      if: steps.lint.outputs.exit-code != '0'
+      shell: bash
+      env:
+        EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
+      run: exit "$EXIT_CODE"
 
     - name: Write step summary
       if: always()

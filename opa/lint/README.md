@@ -1,47 +1,70 @@
 # OPA Lint
 
-Runs [Regal](https://www.openpolicyagent.org/projects/regal) against a Rego directory (or file),
-captures the results as JSON for downstream consumption (e.g. building a step
-summary), and fails the step on any violations.
+Runs [Regal](https://www.openpolicyagent.org/projects/regal) against a Rego
+directory (or file), emits a SARIF report, writes a step summary, and fails the
+step on any violations. The SARIF report is uploaded to GitHub Code Scanning by
+default so violations appear inline in PR diffs and as alerts in the Security
+tab.
 
 ## Prerequisites
 
-None — the action installs Regal automatically when `regal` isn't on PATH.
+Regal is installed automatically when `regal` isn't already on PATH. To pin a
+specific version, run
+[`open-policy-agent/setup-regal`](https://github.com/open-policy-agent/setup-regal)
+earlier in the calling workflow and the action will skip its own install step.
+
+When `upload-sarif` is `'true'` (the default), the calling workflow needs
+`security-events: write` in its `permissions` block. Private/internal repos
+additionally need GitHub Advanced Security (GHAS).
 
 ## Inputs
 
-| Name        | Required | Description                                                                       |
-|-------------|----------|-----------------------------------------------------------------------------------|
-| `rego-path` | yes      | Path to the Rego directory (or file) to lint. Resolves relative to the workspace. |
+| Name | Required | Default | Description |
+|------|----------|---------|-------------|
+| `path` | yes |  | Path to the Rego directory (or file) to lint. Resolves relative to the workspace. |
+| `upload-sarif` | no | `'true'` | Whether to upload the SARIF report to GitHub Code Scanning. Set to `'false'` for repos without GHAS or when you don't want findings posted to the Security tab. |
 
 ## Outputs
 
-| Name           | Description                                                                                   |
-|----------------|-----------------------------------------------------------------------------------------------|
-| `results-file` | Path of the Regal JSON report (always `regal-results.json` in the workspace).                 |
-| `exit-code`    | Regal exit code as a string. `"0"` means no violations; non-zero means violations were found. |
-
-The JSON file conforms to Regal's `--format json` schema and includes a
-`violations` array (file, rule, level, description) plus a `summary` block.
-Read it from a later step that builds a markdown table or filters violations by
-severity.
+The action does not declare outputs. The SARIF report is written to
+`regal-results.sarif` and the human-readable output to `regal-output.txt` in
+the workspace if you need to consume either from a later step.
 
 ## Behavior
 
-- The action runs Regal twice over the same path: once with `--format json`
-  (output captured to disk), once with default output (streamed to the job log
-  so violations are visible while the run is in progress).
-- A missing path fails fast with a clear error rather than letting Regal
-  produce a confusing message.
-- On violations Regal exits non-zero. The action mirrors that as a step failure
-  via `core.setFailed`, so downstream steps with no explicit `if:` will be
-  skipped. Use `if: always()` on summary or reporting steps that should still run.
+- Regal is invoked twice over the same path:
+  1. `--format sarif` — captured to disk for the Code Scanning upload.
+  2. Default (pretty) format — streamed to the job log live and captured for the step summary.
+- A missing `path` fails fast with a clear error.
+- On violations the action defers its `exit` until after the SARIF upload step
+  runs, so findings still reach Code Scanning when the build is about to fail.
+- The upload uses category `regal`, keeping Regal alerts separate from other
+  SARIF producers (CodeQL, Trivy, etc.) in the same repo.
 
 ## Example
 
+Default usage — fail on violations and upload findings to Code Scanning:
+
 ```yaml
-- uses: open-policy-agent/setup-regal@<sha>
+permissions:
+  contents: read
+  security-events: write   # required by upload-sarif: 'true' (the default)
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<sha>
+      - uses: kartverket/actions/opa/lint@<sha>
+        with:
+          path: opa
+```
+
+Skipping the upload (e.g. for a fork or a repo without GHAS):
+
+```yaml
 - uses: kartverket/actions/opa/lint@<sha>
   with:
-    rego-path: policies
+    path: opa
+    upload-sarif: 'false'
 ```
