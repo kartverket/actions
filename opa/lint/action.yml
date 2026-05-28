@@ -1,0 +1,72 @@
+name: 'OPA Lint'
+description: |
+  Runs Regal linting against a Rego directory (or file), captures the results
+  as JSON for downstream consumption, writes a step summary, and fails the step
+  on any violations.
+
+  Prerequisite: Regal must already be installed on the runner. Use
+  `open-policy-agent/setup-regal` in the calling workflow before this action.
+
+inputs:
+  rego-path:
+    description: |
+      Path to the Rego directory (or file) to lint. Resolves relative to the
+      workspace.
+    required: true
+
+outputs:
+  results-file:
+    description: 'Path of the Regal JSON results file written to the workspace.'
+    value: 'regal-results.json'
+  exit-code:
+    description: 'Regal exit code (0 = clean, non-zero = violations found).'
+    value: ${{ steps.lint.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - id: lint
+      name: Run Regal
+      shell: bash
+      env:
+        REGO_PATH: ${{ inputs.rego-path }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! -e "$REGO_PATH" ]]; then
+          echo "::error::rego-path does not exist: $REGO_PATH"
+          exit 1
+        fi
+
+        # Two runs of regal over the same path:
+        #   1. JSON mode, captured to disk for downstream consumption.
+        #   2. Default (pretty) mode, streamed to the job log live AND captured
+        #      to a file so the summary step can embed it.
+        # `bash -e` would abort on the first non-zero exit, so we capture the
+        # exit code via `||` instead.
+        LINT_EXIT=0
+        regal lint --format json "$REGO_PATH" > regal-results.json || LINT_EXIT=$?
+        regal lint "$REGO_PATH" 2>&1 | tee regal-output.txt || true
+
+        echo "exit-code=$LINT_EXIT" >> "$GITHUB_OUTPUT"
+
+        if [[ "$LINT_EXIT" -ne 0 ]]; then
+          echo "::error::Regal found violations (exit $LINT_EXIT)."
+          exit "$LINT_EXIT"
+        fi
+
+    - name: Write step summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "## OPA lint (Regal)"
+          echo ""
+          if [[ -f regal-output.txt ]]; then
+            echo '```'
+            cat regal-output.txt
+            echo '```'
+          else
+            echo "_Lint did not run._"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
