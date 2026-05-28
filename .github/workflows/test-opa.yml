@@ -1,0 +1,259 @@
+name: test-opa
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'opa/**'
+      - '.github/workflows/test-opa.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'opa/**'
+      - '.github/workflows/test-opa.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # Builds the testdata policies and verifies that:
+  #   - the bundle file is produced at the expected path,
+  #   - test files (`*_test.rego`) are excluded from the bundle,
+  #   - production policy files are present in the bundle.
+  build-push-happy-path:
+    name: 'build-push: build only (push=false)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+        with:
+          version: '1.16.2'
+
+      - id: build
+        uses: ./opa/build-push
+        with:
+          rego-path: opa/build-push/testdata/policies
+          push: 'false'
+
+      - name: Verify bundle output
+        env:
+          BUNDLE_PATH: ${{ steps.build.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "$BUNDLE_PATH" ]]; then
+            echo "::error::Bundle was not produced at $BUNDLE_PATH"
+            exit 1
+          fi
+
+          contents=$(tar -tzf "$BUNDLE_PATH")
+          echo "Bundle contents:"
+          echo "$contents"
+
+          # Test files must be excluded by the action's --ignore '*_test.rego'.
+          if echo "$contents" | grep -q '_test\.rego$'; then
+            echo "::error::Test files leaked into bundle"
+            exit 1
+          fi
+
+          # Production policies must be present.
+          for required in main.rego helpers.rego; do
+            if ! echo "$contents" | grep -q "$required"; then
+              echo "::error::Expected $required in bundle, but it was missing"
+              exit 1
+            fi
+          done
+
+  # Verifies the action fails fast (with the expected error) when `rego-path`
+  # doesn't exist on disk.
+  build-push-missing-path:
+    name: 'build-push: fails when rego-path missing'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+        with:
+          version: '1.16.2'
+
+      - id: build
+        uses: ./opa/build-push
+        continue-on-error: true
+        with:
+          rego-path: opa/build-push/testdata/does-not-exist
+          push: 'false'
+
+      - name: Assert the build step failed
+        env:
+          OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected build step to fail, but outcome was '$OUTCOME'"
+            exit 1
+          fi
+
+  # Lints the `clean` testdata fixture — should succeed with zero violations
+  # and produce a regal-results.json with an empty `violations` array.
+  lint-clean:
+    name: 'lint: clean policies pass'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: open-policy-agent/setup-regal@761188c3b435761fa254beca508a44875619648f # v2.0.0
+
+      - id: lint
+        uses: ./opa/lint
+        with:
+          rego-path: opa/lint/testdata/clean
+
+      - name: Verify outputs
+        env:
+          EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
+          RESULTS_FILE: ${{ steps.lint.outputs.results-file }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EXIT_CODE" != "0" ]]; then
+            echo "::error::Expected exit-code 0, got '$EXIT_CODE'"
+            exit 1
+          fi
+
+          violations=$(jq '.violations | length' "$RESULTS_FILE")
+          if [[ "$violations" != "0" ]]; then
+            echo "::error::Expected 0 violations, got $violations"
+            jq '.violations' "$RESULTS_FILE"
+            exit 1
+          fi
+
+  # Lints the `violations` testdata fixture (deliberately badly-formatted Rego)
+  # — should fail with a non-zero exit code and report at least one violation.
+  lint-violations:
+    name: 'lint: violations cause failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: open-policy-agent/setup-regal@761188c3b435761fa254beca508a44875619648f # v2.0.0
+
+      - id: lint
+        uses: ./opa/lint
+        continue-on-error: true
+        with:
+          rego-path: opa/lint/testdata/violations
+
+      - name: Verify the lint step failed and recorded violations
+        env:
+          OUTCOME: ${{ steps.lint.outcome }}
+          EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
+          RESULTS_FILE: ${{ steps.lint.outputs.results-file }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected lint step to fail, got outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [[ "$EXIT_CODE" == "0" ]]; then
+            echo "::error::Expected non-zero exit-code, got '$EXIT_CODE'"
+            exit 1
+          fi
+
+          violations=$(jq '.violations | length' "$RESULTS_FILE")
+          if (( violations < 1 )); then
+            echo "::error::Expected at least one violation, got $violations"
+            exit 1
+          fi
+          echo "Recorded $violations violation(s) as expected."
+
+  # Runs the `passing` testdata fixture — should succeed and report all tests
+  # as passing in the results JSON.
+  test-passing:
+    name: 'test: passing tests succeed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+        with:
+          version: '1.16.2'
+
+      - id: test
+        uses: ./opa/test
+        with:
+          test-path: opa/test/testdata/passing
+
+      - name: Verify outputs
+        env:
+          EXIT_CODE: ${{ steps.test.outputs.exit-code }}
+          RESULTS_FILE: ${{ steps.test.outputs.results-file }}
+          COVERAGE_FILE: ${{ steps.test.outputs.coverage-file }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EXIT_CODE" != "0" ]]; then
+            echo "::error::Expected exit-code 0, got '$EXIT_CODE'"
+            exit 1
+          fi
+
+          failed=$(jq '[.[] | select(.fail == true)] | length' "$RESULTS_FILE")
+          errored=$(jq '[.[] | select(.error != null)] | length' "$RESULTS_FILE")
+          total=$(jq 'length' "$RESULTS_FILE")
+          if (( total == 0 )); then
+            echo "::error::No tests were reported in $RESULTS_FILE"
+            exit 1
+          fi
+          if (( failed != 0 || errored != 0 )); then
+            echo "::error::Expected all tests to pass; got $failed failed, $errored errored (of $total)"
+            exit 1
+          fi
+
+          if [[ ! -f "$COVERAGE_FILE" ]]; then
+            echo "::error::Coverage file was not produced at $COVERAGE_FILE"
+            exit 1
+          fi
+
+  # Runs the `failing` testdata fixture (an assertion that contradicts the
+  # policy) — should fail with a non-zero exit code and report at least one
+  # failing test.
+  test-failing:
+    name: 'test: failing tests cause failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+        with:
+          version: '1.16.2'
+
+      - id: test
+        uses: ./opa/test
+        continue-on-error: true
+        with:
+          test-path: opa/test/testdata/failing
+
+      - name: Verify the test step failed and recorded a failing test
+        env:
+          OUTCOME: ${{ steps.test.outcome }}
+          EXIT_CODE: ${{ steps.test.outputs.exit-code }}
+          RESULTS_FILE: ${{ steps.test.outputs.results-file }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected test step to fail, got outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [[ "$EXIT_CODE" == "0" ]]; then
+            echo "::error::Expected non-zero exit-code, got '$EXIT_CODE'"
+            exit 1
+          fi
+
+          failed=$(jq '[.[] | select(.fail == true)] | length' "$RESULTS_FILE")
+          if (( failed < 1 )); then
+            echo "::error::Expected at least one failing test, got $failed"
+            exit 1
+          fi
+          echo "Recorded $failed failing test(s) as expected."
