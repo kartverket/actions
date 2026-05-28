@@ -1,1 +1,3 @@
 /.security/ @omaen
+/opa/ @kartverket/tilgangsstyring
+/.github/workflows/test-opa.yml @kartverket/tilgangsstyring
