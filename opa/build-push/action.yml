@@ -11,7 +11,7 @@ description: |
   `docker/login-action`); the action does not handle credentials.
 
 inputs:
-  rego-path:
+  path:
     description: |
       Path to the Rego directory to bundle. Resolves relative to the workspace.
     required: true
@@ -34,12 +34,6 @@ inputs:
       applied in addition to these. Ignored when `push` is `'false'`.
     required: false
     default: ''
-  list-contents:
-    description: |
-      If `true`, runs `tar -tzf bundle.tar.gz` after the build so the bundle's
-      contents appear in the job log.
-    required: false
-    default: 'true'
 
 outputs:
   bundle-path:
@@ -95,21 +89,17 @@ runs:
     - name: Build OPA bundle
       shell: bash
       env:
-        REGO_PATH: ${{ inputs.rego-path }}
-        LIST_CONTENTS: ${{ inputs.list-contents }}
+        REGO_PATH: ${{ inputs.path }}
       run: |
         set -euo pipefail
 
         if [[ ! -e "$REGO_PATH" ]]; then
-          echo "::error::rego-path does not exist: $REGO_PATH"
+          echo "::error::path does not exist: $REGO_PATH"
           exit 1
         fi
 
         opa build -b "$REGO_PATH" --ignore '*_test.rego' -o bundle.tar.gz
-
-        if [[ "$LIST_CONTENTS" == "true" ]]; then
-          tar -tzf bundle.tar.gz
-        fi
+        tar -tzf bundle.tar.gz
 
     - id: push
       name: Push bundle to registry
@@ -164,7 +154,6 @@ runs:
             # Build step failed before producing the tarball.
             echo "_Bundle was not built._"
           elif [[ "$PUSH" == "true" && -n "$DIGEST" ]]; then
-            # Pushed successfully — render the full image ref + per-tag list.
             echo "**Image:** \`${IMAGE_REF}\`"
             echo ""
             echo "**Tags:**"
