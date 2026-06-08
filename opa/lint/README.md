@@ -19,10 +19,11 @@ additionally need GitHub Advanced Security (GHAS).
 
 ## Inputs
 
-| Name | Required | Default | Description |
-|------|----------|---------|-------------|
-| `path` | yes |  | Path to the Rego directory (or file) to lint. Resolves relative to the workspace. |
-| `upload-sarif` | no | `'true'` | Whether to upload the SARIF report to GitHub Code Scanning. Set to `'false'` for repos without GHAS or when you don't want findings posted to the Security tab. |
+| Name           | Required | Default  | Description                                                                                                                                                     |
+|----------------|----------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `path`         | yes      |          | Path to the Rego directory (or file) to lint. Resolves relative to the workspace.                                                                               |
+| `upload-sarif` | no       | `'true'` | Whether to upload the SARIF report to GitHub Code Scanning. Set to `'false'` for repos without GHAS or when you don't want findings posted to the Security tab. |
+| `config-file`  | no       |          | Path to the Regal config file to use when linting.                                                                                                              |
 
 ## Outputs
 

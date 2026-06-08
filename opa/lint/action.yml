@@ -20,6 +20,12 @@ inputs:
       permissions. Set to `'false'` to skip the upload.
     required: false
     default: 'true'
+  config-file:
+    description:  |
+      Path to the Regal config file used when linting with Regal. Resolves 
+      relative to the workspace.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -45,6 +51,7 @@ runs:
       name: Run Regal
       shell: bash
       env:
+        CONFIG_FILE: ${{ inputs.config-file }}
         REGO_PATH: ${{ inputs.path }}
         # Disable ANSI color codes so the captured output (regal-output.txt) is
         # plain text — otherwise the step summary renders escape sequences as
@@ -65,8 +72,14 @@ runs:
         # `bash -e` would abort on the first non-zero exit, so we capture the
         # exit code via `||` instead.
         LINT_EXIT=0
-        regal lint --format sarif "$REGO_PATH" > regal-results.sarif || LINT_EXIT=$?
-        regal lint "$REGO_PATH" 2>&1 | tee regal-output.txt || true
+        
+        REGAL_CONFIG_FLAG=""
+        if [ -n "$CONFIG_FILE" ]; then
+          REGAL_CONFIG_FLAG="--config-file $CONFIG_FILE"
+        fi
+        
+        regal lint --format sarif $REGAL_CONFIG_FLAG "$REGO_PATH" > regal-results.sarif || LINT_EXIT=$?
+        regal lint $REGAL_CONFIG_FLAG "$REGO_PATH" 2>&1 | tee regal-output.txt || true
 
         echo "exit-code=$LINT_EXIT" >> "$GITHUB_OUTPUT"
 
