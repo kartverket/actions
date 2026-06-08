@@ -138,6 +138,84 @@ jobs:
             exit 1
           fi
 
+  # Lints the 'clean_with_data' together with regal config file. Should succeed.
+  lint-clean-with-data-and-config:
+    name: 'lint: clean_with_data with Regal config pass'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: lint
+        uses: ./opa/lint
+        with:
+          path: opa/lint/testdata/clean_with_data
+          # Skip Code Scanning upload in CI — this workflow only verifies the
+          # action's local behaviour, not the upload integration.
+          upload-sarif: 'false'
+          config-file: opa/lint/testdata/clean_with_data/regal-config.yaml
+
+      - name: Verify SARIF report has no findings
+        env:
+          OUTCOME: ${{ steps.lint.outcome }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$OUTCOME" != "success" ]]; then
+            echo "::error::Expected lint step to succeed, got outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [[ ! -f regal-results.sarif ]]; then
+            echo "::error::regal-results.sarif was not produced"
+            exit 1
+          fi
+
+          # SARIF places findings under `.runs[0].results`.
+          results=$(jq '.runs[0].results | length' regal-results.sarif)
+          if [[ "$results" != "0" ]]; then
+            echo "::error::Expected 0 SARIF results, got $results"
+            jq '.runs[0].results' regal-results.sarif
+            exit 1
+          fi
+
+  # Lints the 'clean_with_data' together without regal config file. Should fail
+  # as a config is needed to correctly resolve the linting error for unresolved-reference.
+  lint-clean-with-data-without-config:
+    name: 'lint: clean_with_data without Regal config failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: lint
+        uses: ./opa/lint
+        continue-on-error: true
+        with:
+          path: opa/lint/testdata/clean_with_data
+          # Skip Code Scanning upload in CI — this workflow only verifies the
+          # action's local behaviour, not the upload integration.
+          upload-sarif: 'false'
+
+      - name: Verify the lint step failed and recorded violations
+        env:
+          OUTCOME: ${{ steps.lint.outcome }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected lint step to fail, got outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [[ ! -f regal-results.sarif ]]; then
+            echo "::error::regal-results.sarif was not produced"
+            exit 1
+          fi
+
+          results=$(jq '.runs[0].results | length' regal-results.sarif)
+          if (( results < 1 )); then
+            echo "::error::Expected at least one SARIF result, got $results"
+            exit 1
+          fi
+          echo "Recorded $results SARIF result(s) as expected."
+
   # Lints the `violations` testdata fixture (deliberately badly-formatted Rego)
   # — should fail with a non-zero exit code and report at least one SARIF
   # finding.
