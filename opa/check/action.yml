@@ -1,0 +1,97 @@
+name: 'OPA Check'
+description: |
+  Runs `opa check` against a Rego directory (or file) to verify policies parse
+  and type-check cleanly. Optionally validates against JSON schemas to catch
+  references to missing/typed-incorrectly input fields. Writes a step summary
+  and fails the step on any check errors.
+
+  The action will install OPA automatically if it isn't already on PATH.
+
+inputs:
+  path:
+    description: |
+      Path to the Rego directory (or file) to check. Resolves relative to the
+      workspace.
+    required: true
+  schemas:
+    description: |
+      Optional path to a JSON Schema file or schema-set directory passed to
+      `opa check -s`. When set, OPA type-checks references to `input` (and any
+      mapped data documents) against the schema(s).
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # Self-bootstrap: install OPA only if it's not already on PATH. Callers
+    # that pin a specific version with `open-policy-agent/setup-opa` upstream
+    # will skip this step entirely.
+    - name: Check OPA installation
+      id: check-opa
+      shell: bash
+      run: |
+        if command -v opa >/dev/null 2>&1; then
+          echo "OPA already installed: $(opa version 2>/dev/null | head -1 || true)"
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Setup OPA
+      if: steps.check-opa.outputs.installed != 'true'
+      uses: open-policy-agent/setup-opa@b2b258e089860efaadaaf71bf6e3aecb4a3eeff1 # v2.4.0
+      with:
+        version: '1.16.2'
+
+    - id: check
+      name: Run opa check
+      shell: bash
+      env:
+        REGO_PATH: ${{ inputs.path }}
+        SCHEMAS_PATH: ${{ inputs.schemas }}
+        # Disable ANSI color codes so the captured output is plain text —
+        # otherwise the step summary renders escape sequences as garbage.
+        NO_COLOR: '1'
+      run: |
+        set -euo pipefail
+
+        if [[ ! -e "$REGO_PATH" ]]; then
+          echo "::error::path does not exist: $REGO_PATH"
+          exit 1
+        fi
+
+        SCHEMAS_FLAG=""
+        if [ -n "$SCHEMAS_PATH" ]; then
+          if [[ ! -e "$SCHEMAS_PATH" ]]; then
+            echo "::error::schemas-path does not exist: $SCHEMAS_PATH"
+            exit 1
+          fi
+          SCHEMAS_FLAG="--schema $SCHEMAS_PATH"
+        fi
+
+        opa check $SCHEMAS_FLAG "$REGO_PATH" 2>&1 | tee opa-check-output.txt || CHECK_EXIT=$?
+
+        if [[ "$CHECK_EXIT" -ne 0 ]]; then
+          echo "::error::opa check failed (exit $CHECK_EXIT)."
+          exit "$CHECK_EXIT"
+        fi
+
+    - name: Write step summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "## OPA check"
+          echo ""
+          if [[ -f opa-check-output.txt && -s opa-check-output.txt ]]; then
+            echo '```'
+            cat opa-check-output.txt
+            echo '```'
+          elif [[ -f opa-check-output.txt ]]; then
+            # File exists but is empty — opa check is quiet on success.
+            echo "No errors."
+          else
+            echo "_Check did not run._"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

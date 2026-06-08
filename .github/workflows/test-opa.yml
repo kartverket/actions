@@ -330,3 +330,73 @@ jobs:
             exit 1
           fi
           echo "Failing test was reported as expected."
+
+  # Runs opa check against testdata without schemas specified.
+  # Should pass as schema validation catches the type bug in the policy.
+  check-passing:
+    name: 'check: missing schemas succeeds'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: check
+        uses: ./opa/check
+        with:
+          path: opa/check/testdata
+
+      - name: Verify outputs
+        env:
+          OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$OUTCOME" != "success" ]]; then
+            echo "::error::Expected check step to succeed without schemas, got outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [[ ! -f opa-check-output.txt ]]; then
+            echo "::error::opa-check-output.txt was not produced"
+            exit 1
+          fi
+
+  # Runs opa check against testdata with schemas specified.
+  # Should fail as schema validation catches the type bug in the policy.
+  check-failing:
+    name: 'check: including schemas fails'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: check
+        uses: ./opa/check
+        continue-on-error: true
+        with:
+          path: opa/check/testdata
+          schemas: opa/check/testdata/schemas
+
+      - name: Verify outputs
+        env:
+          OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected check step to fail with schemas, got outcome '$OUTCOME'"
+            exit 1
+          fi
+          if [[ ! -f opa-check-output.txt ]]; then
+            echo "::error::opa-check-output.txt was not produced"
+            exit 1
+          fi
+
+          # Schema validation should report the allowed field names. We grep
+          # with `-F` (fixed string) so the brackets / quotes aren't interpreted
+          # as regex metacharacters.
+          expected='want (one of): ["name" "role"]'
+          if ! grep -qF "$expected" opa-check-output.txt; then
+            echo "::error::Expected output to contain: $expected"
+            echo "Actual output:"
+            cat opa-check-output.txt
+            exit 1
+          fi
+          echo "Schema validation reported the expected fields."
