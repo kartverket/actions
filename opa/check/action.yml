@@ -60,6 +60,7 @@ runs:
           echo "::error::path does not exist: $REGO_PATH"
           exit 1
         fi
+        CHECK_EXIT=0
 
         SCHEMAS_FLAG=""
         if [ -n "$SCHEMAS_PATH" ]; then
