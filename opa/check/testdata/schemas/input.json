@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "The input schema for check_audience",
+  "default": {},
+  "examples": [
+    {
+      "name": "Alice",
+      "role": "read"
+    }
+  ],
+  "required": [
+    "name",
+    "role"
+  ],
+  "properties": {
+    "name": {
+      "$id": "#/properties/name",
+      "type": "string",
+      "title": "The name of the user",
+      "default": "",
+      "examples": [
+        "Alice"
+      ]
+    },
+    "role": {
+      "$id": "#/properties/role",
+      "type": "string",
+      "title": "The role to check against",
+      "default": "",
+      "examples": [
+        "write"
+      ]
+    }
+  }
+}

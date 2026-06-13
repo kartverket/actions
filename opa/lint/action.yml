@@ -22,7 +22,7 @@ inputs:
     default: 'true'
   config-file:
     description:  |
-      Path to the Regal config file used when linting with Regal. Resolves 
+      Optional path to the Regal config file to use when linting with Regal. Resolves 
       relative to the workspace.
     required: false
     default: ""
@@ -75,6 +75,10 @@ runs:
         
         REGAL_CONFIG_FLAG=""
         if [ -n "$CONFIG_FILE" ]; then
+          if [[ ! -e "$CONFIG_FILE" ]]; then
+            echo "::error::config-file does not exist: $CONFIG_FILE"
+            exit 1
+          fi
           REGAL_CONFIG_FLAG="--config-file $CONFIG_FILE"
         fi
         
