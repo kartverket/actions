@@ -7,21 +7,46 @@ inputs:
     required: false
     default: .
 
+  terraform_version:
+    description: "Terraform version to install. If unset, .terraform-version in path is used if present, otherwise latest."
+    required: false
+    default: ""
+
 outputs:
   init_outcome:
     description: The outcome of the initialization step
     value: ${{ steps.init.outcome }}
 
+  terraform_version:
+    description: The resolved Terraform version
+    value: ${{ steps.resolve-terraform-version.outputs.terraform_version }}
 
 runs:
   using: composite
 
   steps:
+    - name: Resolve Terraform version
+      id: resolve-terraform-version
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+        if [[ -n "${{ inputs.terraform_version }}" ]]; then
+          terraform_version="${{ inputs.terraform_version }}"
+        elif [[ -f ".terraform-version" ]]; then
+          terraform_version="$(tr -d '[:space:]' < .terraform-version)"
+        else
+          terraform_version="latest"
+        fi
+        
+        echo "terraform_version=${terraform_version}" >> "$GITHUB_OUTPUT"
+
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v4
-    # TODO: Future: Terraform modules and version override
+      with:
+        terraform_version: ${{ steps.resolve-terraform-version.outputs.terraform_version }}
 
-    - name: Initilize Terraform
+    - name: Initialize Terraform
       id: init
       shell: bash
       working-directory: ${{ inputs.path }}
@@ -31,4 +56,3 @@ runs:
       shell: bash
       run: |
         echo "SKIP_TF_INIT_OUTCOME=${{ steps.init.outcome }}" >> "$GITHUB_ENV"
-
