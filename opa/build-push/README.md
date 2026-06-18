@@ -1,8 +1,22 @@
 # OPA Build & Push
 
 Builds an OPA bundle (`bundle.tar.gz`) from a Rego directory and optionally
-pushes it to an OCI registry with one or more tags. Test files (`*_test.rego`)
-are excluded so the production bundle stays lean.
+pushes it to an OCI registry. The bundle is always tagged with
+`sha256-<content-hash>`, where `<content-hash>` is `sha256sum bundle.tar.gz`.
+`additional-tags` appends to that. Test files (`*_test.rego`) are excluded so
+the production bundle stays lean.
+
+When a bundle with the same content sha already exists in the registry, the
+action skips the push and applies `additional-tags` to the existing manifest
+via `oras tag`. This avoids creating duplicate manifests/signatures/provenance
+attestations for identical content.
+
+> **Determinism caveat:** the cache only hits when `opa build` produces
+> byte-identical output across runs. By default it does not — gzip embeds an
+> mtime and tar entry ordering can vary. The action still works correctly
+> without deterministic builds; the cache simply misses more often. For
+> reproducible builds, post-process the tarball (e.g. `gunzip` + `gzip -n`,
+> repack tar with `--sort=name --mtime=...`) before the action runs.
 
 ## Prerequisites
 
@@ -25,7 +39,7 @@ the runner must already be authenticated to the target registry:
 | `path` | yes |  | Path to the Rego directory to bundle. Resolves relative to the workspace. |
 | `push` | no | `'true'` | Whether to push the built bundle to the registry. Set to `'false'` to build only — useful for PR validation where the push happens on merge. |
 | `artifact-name` | conditional |  | Full OCI reference (without tag) to push to. Example: `ghcr.io/kartverket/accesserator/opa-bundle`. Required when `push` is `'true'`. |
-| `additional-tags` | no | `''` | Extra tags to apply, one per line. `sha-<commit>` is always applied in addition to these. Ignored when `push` is `'false'`. |
+| `additional-tags` | no | `''` | Comma-separated list of extra tags to apply (e.g. `latest,v1`). `sha256-<content-hash>` is always applied in addition to these. Ignored when `push` is `'false'`. |
 
 ## Outputs
 
@@ -42,11 +56,18 @@ the runner must already be authenticated to the target registry:
 - The bundle is built with `opa build -b <path> --ignore '*_test.rego' -o bundle.tar.gz`.
 - After building, `tar -tzf bundle.tar.gz` lists the bundle contents in the job
   log so you can sanity-check what's included.
-- When `push` is `'true'`, the manifest is tagged with `sha-<commit>` plus
-  every entry of `additional-tags`. ORAS pushes a single manifest and applies
-  all tags to it.
-- Whitespace inside each `additional-tags` entry is stripped, so YAML block
-  scalars with indentation work cleanly.
+- When `push` is `'true'`, the manifest is tagged with
+  `sha256-<content-hash>` (where `<content-hash>` = `sha256sum bundle.tar.gz`)
+  plus every entry of `additional-tags`.
+  - **First push for this content:** ORAS pushes a single manifest with every
+    tag in one call (`...:tag1,tag2,tag3`).
+  - **Repeat push of identical content** (i.e.
+    `<artifact-name>:sha256-<content-hash>` already exists): the action skips
+    re-pushing and uses `oras tag` to apply each extra tag to the existing
+    manifest. This keeps re-runs cheap and avoids piling up duplicate manifests
+    / signatures / provenance attestations for identical content.
+- `additional-tags` is split on commas. Whitespace around each tag is stripped,
+  so `'latest, v1, stable'` and `'latest,v1,stable'` produce the same result.
 - A step summary is written with `if: always()` showing the image ref and tag
   list on a successful push, or a note when the bundle was built but not pushed
   (either because `push` was `'false'` or the push step failed).
@@ -76,20 +97,17 @@ With additional tags on pushes to main:
   with:
     path: opa
     artifact-name: ghcr.io/${{ github.repository }}/opa-bundle
-    additional-tags: |
-      ${{ github.ref == 'refs/heads/main' && 'latest' || '' }}
+    additional-tags: ${{ github.ref == 'refs/heads/main' && 'latest' || '' }}
 ```
 
-Chaining with a cosign signing step:
+Or multiple tags at once:
 
 ```yaml
 - uses: kartverket/actions/opa/build-push@<sha>
-  id: build
   with:
     path: opa
     artifact-name: ghcr.io/${{ github.repository }}/opa-bundle
-
-- run: cosign sign --yes --new-bundle-format ${{ steps.build.outputs.image-ref }}
+    additional-tags: latest,v1,stable
 ```
 
 Build-only (PR validation; push happens on merge):
