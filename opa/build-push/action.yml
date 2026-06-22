@@ -1,8 +1,18 @@
 name: 'OPA Build and Push'
 description: |
   Builds an OPA bundle (`bundle.tar.gz`) from a Rego directory and pushes it to
-  an OCI registry with one or more tags. Test files (`*_test.rego`) are excluded
-  so the production bundle stays lean.
+  an OCI registry. The bundle is always tagged with `sha256-<content-hash>`,
+  where `<content-hash>` is `sha256sum bundle.tar.gz`. `additional-tags`
+  appends to that. Test files (`*_test.rego`) are excluded so the production
+  bundle stays lean.
+
+  When a bundle with the same content sha already exists in the registry, the
+  action skips the push and applies `additional-tags` to the existing manifest
+  via `oras tag`. This avoids creating duplicate manifests / signatures /
+  provenance attestations for identical content.
+
+  Note: this optimization only fires when `opa build` produces byte-identical
+  output across runs.
 
   The action will install OPA and ORAS automatically if they aren't already on
   PATH.
@@ -30,8 +40,9 @@ inputs:
     default: ''
   additional-tags:
     description: |
-      Extra tags to apply to the bundle, one per line. `sha-<commit>` is always
-      applied in addition to these. Ignored when `push` is `'false'`.
+      Comma-separated list of extra tags to apply on top of the always-included
+      `sha256-<content-hash>` tag (e.g. `latest,v1`). Whitespace around each
+      tag is stripped. Ignored when `push` is `'false'`.
     required: false
     default: ''
 
@@ -110,7 +121,6 @@ runs:
       env:
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
         ADDITIONAL_TAGS: ${{ inputs.additional-tags }}
-        SHA_TAG: sha-${{ github.sha }}
       run: |
         set -euo pipefail
 
@@ -119,21 +129,48 @@ runs:
           exit 1
         fi
 
-        # Build a comma-joined tag list. `sha-<commit>` always goes first; extra
-        # tags are appended in caller-supplied order. Whitespace inside each tag
-        # is stripped so YAML block scalars with indentation work cleanly.
-        tag_list="$SHA_TAG"
-        while IFS= read -r t; do
+        # Derive the always-on tag from the bundle's actual content hash so
+        # the same bytes always map to the same tag — letting us short-circuit
+        # the push when the content already exists in the registry.
+        content_sha=$(sha256sum bundle.tar.gz | cut -d' ' -f1)
+        SHA_TAG="sha256-${content_sha}"
+
+        # Build the full tag list. The content-derived sha tag is always first;
+        # caller's comma-separated extras follow. Whitespace around each entry
+        # is stripped so callers can pass `"latest, v1, stable"` without
+        # surprises.
+        all_tags=("$SHA_TAG")
+        IFS=',' read -ra EXTRA_TAGS <<< "$ADDITIONAL_TAGS"
+        for t in "${EXTRA_TAGS[@]}"; do
           t="${t//[[:space:]]/}"
           [[ -z "$t" ]] && continue
-          tag_list="${tag_list},${t}"
-        done <<< "$ADDITIONAL_TAGS"
+          all_tags+=("$t")
+        done
 
-        # ORAS accepts a comma-joined tag list inside the ref (`...:tag1,tag2`)
-        # and applies all of them to the same manifest digest in a single push.
-        digest=$(oras push "${ARTIFACT_NAME}:${tag_list}" \
-          bundle.tar.gz:application/vnd.oci.image.layer.v1.tar+gzip \
-          --format json | jq -r '.digest')
+        # If a bundle with this exact content already exists in the registry,
+        # `oras tag` is cheaper and avoids creating duplicate manifests /
+        # signatures / provenance attestations. We just apply the caller's
+        # extras to the existing manifest.
+        if oras manifest fetch "${ARTIFACT_NAME}:${SHA_TAG}" >/dev/null 2>&1; then
+          echo "Bundle already exists at ${ARTIFACT_NAME}:${SHA_TAG} — applying tags only."
+          digest=$(oras manifest fetch --descriptor "${ARTIFACT_NAME}:${SHA_TAG}" | jq -r '.digest')
+          for t in "${all_tags[@]}"; do
+            # Skip the sha-tag itself; it's already present.
+            [[ "$t" == "$SHA_TAG" ]] && continue
+            oras tag "${ARTIFACT_NAME}:${SHA_TAG}" "$t"
+          done
+        else
+          # First push for this content — apply every tag in a single ORAS
+          # call. ORAS accepts a comma-joined tag list inside the ref
+          # (`...:tag1,tag2`) and applies all of them to the same manifest.
+          tag_list=$(IFS=','; echo "${all_tags[*]}")
+          digest=$(oras push "${ARTIFACT_NAME}:${tag_list}" \
+            bundle.tar.gz:application/vnd.oci.image.layer.v1.tar+gzip \
+            --format json | jq -r '.digest')
+        fi
+
+        # Comma-joined list of all tags now pointing at this digest.
+        tag_list=$(IFS=','; echo "${all_tags[*]}")
 
         echo "digest=$digest" >> "$GITHUB_OUTPUT"
         echo "tags=$tag_list" >> "$GITHUB_OUTPUT"
