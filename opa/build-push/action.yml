@@ -165,6 +165,8 @@ runs:
           # (`...:tag1,tag2`) and applies all of them to the same manifest.
           tag_list=$(IFS=','; echo "${all_tags[*]}")
           digest=$(oras push "${ARTIFACT_NAME}:${tag_list}" \
+            --artifact-type "application/vnd.cncf.openpolicyagent.config.v1+json" \
+            --config /dev/null:application/vnd.oci.image.config.v1+json \
             bundle.tar.gz:application/vnd.oci.image.layer.v1.tar+gzip \
             --format json | jq -r '.digest')
         fi
