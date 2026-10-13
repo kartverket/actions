@@ -6,13 +6,6 @@ catch typos in `input` field names and type mismatches before they reach
 `opa test` or production. Writes a step summary and fails the step on any
 check errors.
 
-## Prerequisites
-
-OPA is installed automatically when `opa` isn't already on PATH. To pin a
-specific version, run
-[`open-policy-agent/setup-opa`](https://github.com/open-policy-agent/setup-opa)
-earlier in the calling workflow and the action will skip its own install step.
-
 ## Inputs
 
 | Name | Required | Default | Description |

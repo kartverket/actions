@@ -4,13 +4,6 @@ Runs `opa test` against a Rego directory (or file), captures the human-readable
 results and the overall coverage percentage, writes a step summary, and fails
 the step on any failing tests.
 
-## Prerequisites
-
-OPA is installed automatically when `opa` isn't already on PATH. To pin a
-specific version, run
-[`open-policy-agent/setup-opa`](https://github.com/open-policy-agent/setup-opa)
-earlier in the calling workflow and the action will skip its own install step.
-
 ## Inputs
 
 | Name | Required | Description |

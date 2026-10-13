@@ -8,11 +8,6 @@ tab.
 
 ## Prerequisites
 
-Regal is installed automatically when `regal` isn't already on PATH. To pin a
-specific version, run
-[`open-policy-agent/setup-regal`](https://github.com/open-policy-agent/setup-regal)
-earlier in the calling workflow and the action will skip its own install step.
-
 When `upload-sarif` is `'true'` (the default), the calling workflow needs
 `security-events: write` in its `permissions` block. Private/internal repos
 additionally need GitHub Advanced Security (GHAS).
