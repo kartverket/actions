@@ -12,6 +12,11 @@ inputs:
       Path to the Rego directory (or file) to lint. Resolves relative to the
       workspace.
     required: true
+  regal-version:
+    description: |
+      Version of Regal to install and use to lint.
+    required: false
+    default: 'latest'
   upload-sarif:
     description: |
       If `'true'` (default), uploads the Regal SARIF report to GitHub Code
@@ -45,7 +50,7 @@ runs:
       if: steps.check-regal.outputs.installed != 'true'
       uses: open-policy-agent/setup-regal@761188c3b435761fa254beca508a44875619648f # v2.0.0
       with:
-        version: 'v0.40.0'
+        version: ${{ inputs.regal-version }}
 
     - id: lint
       name: Run Regal
