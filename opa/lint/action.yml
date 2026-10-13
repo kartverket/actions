@@ -30,22 +30,15 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Check Regal installation
-      id: check-regal
+    - name: Read pinned Regal version
+      id: regal-version
       shell: bash
-      run: |
-        if command -v regal >/dev/null 2>&1; then
-          echo "Regal already installed: $(regal version 2>/dev/null | head -1 || true)"
-          echo "installed=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "installed=false" >> "$GITHUB_OUTPUT"
-        fi
+      run: echo "version=$(cat "${{ github.action_path }}/../regal-version")" >> "$GITHUB_OUTPUT"
 
     - name: Setup Regal
-      if: steps.check-regal.outputs.installed != 'true'
       uses: open-policy-agent/setup-regal@761188c3b435761fa254beca508a44875619648f # v2.0.0
       with:
-        version: 'v0.40.0'
+        version: ${{ steps.regal-version.outputs.version }}
 
     - id: lint
       name: Run Regal
@@ -93,7 +86,7 @@ runs:
 
     - name: Upload SARIF to Code Scanning
       if: ${{ inputs.upload-sarif == 'true' }}
-      uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+      uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
       with:
         sarif_file: regal-results.sarif
         category: regal
