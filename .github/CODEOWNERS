@@ -1,3 +1,4 @@
 * @kartverket/skip
 /opa/ @kartverket/tilgangsstyring
 /.github/workflows/test-opa.yml @kartverket/tilgangsstyring
+.github/chainguard/accesserator.sts.yaml @kartverket/tilgangsstyring
