@@ -20,13 +20,6 @@ attestations for identical content.
 
 ## Prerequisites
 
-OPA and ORAS are installed automatically when they aren't already on PATH. To
-pin specific versions, run these earlier in the calling workflow and the action
-will skip its own install steps:
-
-- [`open-policy-agent/setup-opa`](https://github.com/open-policy-agent/setup-opa)
-- [`oras-project/setup-oras`](https://github.com/oras-project/setup-oras)
-
 Registry credentials are not installed by this action — when `push` is `'true'`,
 the runner must already be authenticated to the target registry:
 
