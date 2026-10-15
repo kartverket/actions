@@ -76,19 +76,7 @@ runs:
       with:
         version: ${{ inputs.opa-version }}
 
-    - name: Check ORAS installation
-      id: check-oras
-      shell: bash
-      run: |
-        if command -v oras >/dev/null 2>&1; then
-          echo "ORAS already installed: $(oras version 2>/dev/null | head -1 || true)"
-          echo "installed=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "installed=false" >> "$GITHUB_OUTPUT"
-        fi
-
     - name: Setup ORAS
-      if: steps.check-oras.outputs.installed != 'true'
       uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
 
     - id: build
